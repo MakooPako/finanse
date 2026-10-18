@@ -10,7 +10,14 @@ Prywatny dashboard domowego budżetu. Strona działa na GitHub Pages, a dane poc
 - `apps-script/Code.gs`: skrypt podpięty do arkusza. Czyta arkusz, liczy prognozy i zapisuje wpisy. Odpowiada tylko na zapytania z poprawnym kluczem.
 - `manifest.webmanifest`, `sw.js`, `icons/`: instalacja jako aplikacja na telefonie i komputerze, praca bez internetu z ostatnimi danymi.
 
-Strona wysyła do skryptu `POST` z kluczem w treści zapytania (nie w adresie). Klucz zostaje w pamięci przeglądarki na urządzeniu, na którym go wpisano.
+Strona wysyła do skryptu `POST` z przepustką urządzenia w treści zapytania (nie w adresie).
+
+**Dostęp:**
+- Główny klucz (`utworzKlucz`) służy tylko do połączenia pierwszego urządzenia i nie zostaje w przeglądarce.
+- Każde urządzenie dostaje własną przepustkę. W arkuszu, w zakładce „Urządzenia”, zapisany jest tylko jej skrót SHA-256.
+- Kolejne urządzenia łączysz 6-cyfrowym kodem (ważny 5 minut, jednorazowy).
+- Lista urządzeń, historia i usuwanie: w aplikacji, Plan → Urządzenia. Usunięte urządzenie traci dostęp od razu.
+- Awaryjnie: funkcja `odlaczWszystkieUrzadzenia` w Apps Script odcina wszystkie urządzenia.
 
 ## Uruchomienie u siebie
 

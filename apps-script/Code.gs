@@ -2,11 +2,12 @@
  * DASHBOARD FINANSÓW – Google Apps Script (projekt w arkuszu)
  *
  * Od wersji 10 skrypt jest tylko źródłem danych (API). Strona aplikacji
- * leży na GitHub Pages i łączy się z tym skryptem przez doPost z tajnym kluczem.
+ * leży na GitHub Pages (makoopako.github.io/finanse) i łączy się z tym skryptem przez doPost.
  *  - Wdrożenie: Aplikacja internetowa, Wykonaj jako: Ja, Kto ma dostęp: Każdy.
- *  - Klucz: uruchom raz funkcję utworzKlucz (wynik w dzienniku wykonania).
- *    Ponowne uruchomienie tworzy nowy klucz, a stary przestaje działać.
- *  - Bez klucza skrypt nie zwraca żadnych danych.
+ *    Przy zmianach edytuj istniejące wdrożenie (Nowa wersja), żeby adres się nie zmienił.
+ *  - Klucz główny: funkcja utworzKlucz (wynik w dzienniku wykonania). Służy do połączenia pierwszego urządzenia.
+ *  - Każde urządzenie ma własną przepustkę; lista w zakładce „Urządzenia” i w aplikacji (Plan → Urządzenia).
+ *  - Bez przepustki albo klucza skrypt nie zwraca żadnych danych.
  * Alerty są tylko na dashboardzie – skrypt nie wysyła maili
  * i nie potrzebuje żadnych wyzwalaczy.
  * Do diagnostyki możesz ręcznie uruchomić debugModel (wynik w dzienniku).
@@ -17,10 +18,11 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '10',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '11',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
+  DEVICES_SHEET: 'Urządzenia',
   LOG_HEADER: ['ID', 'Dodano', 'Data zakupu', 'Typ', 'Kategoria', 'Kwota', 'Opis',
     'Niezapłacone', 'Komórka', 'Było', 'Jest', 'Status', 'Z nadpłaty', 'Płatność'],
   LOG_SHOW: 40,
@@ -52,30 +54,40 @@ const CFG = {
 
 /* ============================ API DLA STRONY ============================ */
 /*
- * Strona wysyła POST z treścią {"key": "...", "fn": "refreshData", "arg": {...}} jako text/plain
- * (bez zapytania wstępnego CORS). Odpowiedź to JSON. Bez poprawnego klucza nie ma żadnych danych.
- * Celowo nie ma tu HtmlService: strona HTML z Apps Script pozwalałaby wołać funkcje przez google.script.run z pominięciem klucza.
+ * Strona wysyła POST z treścią {"token" albo "key", "fn": "...", "arg": {...}} jako text/plain
+ * (bez zapytania wstępnego CORS). Odpowiedź to JSON. Bez ważnej przepustki albo klucza nie ma żadnych danych.
+ * Celowo nie ma tu HtmlService: strona HTML z Apps Script pozwalałaby wołać funkcje przez google.script.run z pominięciem zabezpieczeń.
+ *
+ * Przepustki urządzeń (od v11):
+ *  - główny klucz (utworzKlucz) służy tylko do połączenia pierwszego urządzenia i awaryjnie,
+ *  - każde połączone urządzenie dostaje własną przepustkę; w zakładce „Urządzenia” zapisany jest tylko jej skrót (SHA-256),
+ *  - usunięcie urządzenia od razu je odcina, inne działają dalej.
  */
 
 function doGet() {
-  return ContentService.createTextOutput('Finanse: to jest adres danych aplikacji. Wpisz go w aplikacji razem z kluczem. Bez klucza nie ma tu żadnych danych.');
+  return ContentService.createTextOutput('Finanse: to jest adres danych aplikacji. Bez przepustki urządzenia nie ma tu żadnych danych.');
 }
 
 function doPost(e) {
   let req = null;
   try { req = JSON.parse(e && e.postData ? e.postData.contents : ''); } catch (err) { req = null; }
   if (!req || typeof req !== 'object') return apiJson_({ ok: false, error: 'Niepoprawne zapytanie.' });
-  if (req.fn === 'pairFinish') return apiJson_(pairFinish_(req.arg));   // jedyna operacja bez klucza: wymiana kodu parowania na klucz
-  const gate = checkKey_(req.key);
-  if (!gate.ok) return apiJson_({ ok: false, auth: true, error: gate.error });
-  const actions = {
-    refreshData: refreshData, addEntry: addEntry, undoEntry: undoEntry,
-    saveLimit: saveLimit, deleteLimit: deleteLimit, savePayment: savePayment, deletePayment: deletePayment,
-    pairStart: pairStart_
-  };
-  if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
   try {
-    return apiText_(actions[req.fn](req.arg === undefined ? null : req.arg));
+    if (req.fn === 'pairFinish') return apiJson_(pairFinish_(req.arg));   // jedyna operacja bez przepustki: kod parowania → nowa przepustka
+    const who = authorize_(req);
+    if (!who.ok) return apiJson_({ ok: false, auth: true, revoked: !!who.revoked, error: who.error });
+    const actions = {
+      refreshData: refreshData, addEntry: addEntry, undoEntry: undoEntry,
+      saveLimit: saveLimit, deleteLimit: deleteLimit, savePayment: savePayment, deletePayment: deletePayment,
+      pairStart: pairStart_,
+      register: function (arg) { return JSON.stringify(registerDevice_(arg, who.device ? 'kod' : 'klucz')); },
+      renameDevice: function (arg) { return withDevices_(who, renameDevice_(arg)); },
+      removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
+    };
+    if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
+    if (req.fn === 'register' && who.device) return apiJson_({ ok: false, error: 'To urządzenie jest już połączone.' });
+    const out = actions[req.fn](req.arg === undefined ? null : req.arg);
+    return apiText_(attachDevices_(out, who));
   } catch (err) {
     return apiJson_({ ok: false, error: String(err && err.message || err) });
   }
@@ -84,21 +96,168 @@ function doPost(e) {
 function apiText_(s) { return ContentService.createTextOutput(s).setMimeType(ContentService.MimeType.JSON); }
 function apiJson_(o) { return apiText_(JSON.stringify(o)); }
 
-/**
- * Sprawdza klucz. Klucz ma ok. 180 bitów losowości, więc zgadywanie nie ma szans i nie trzeba blokady
- * (blokada pozwalałaby obcemu odciąć Ciebie od aplikacji, wysyłając złe klucze).
- */
-function checkKey_(key) {
+/** Dokłada listę urządzeń do modelu (sam model albo { ok, model }), żeby aplikacja zawsze ją miała. */
+function attachDevices_(out, who) {
+  let o;
+  try { o = JSON.parse(out); } catch (e) { return out; }
+  const target = o && o.year ? o : (o && o.model && o.model.year ? o.model : null);
+  if (!target) return out;
+  target.devices = devicesInfo_(who.device ? who.device.id : null);
+  return JSON.stringify(o);
+}
+
+function withDevices_(who, res) {
+  res.devices = devicesInfo_(who.device ? who.device.id : null);
+  return JSON.stringify(res);
+}
+
+/** Kto pyta: urządzenie z przepustką albo ktoś z głównym kluczem (pierwsze połączenie, stare urządzenia przed v11). */
+function authorize_(req) {
+  if (typeof req.token === 'string' && req.token) {
+    const dev = deviceByToken_(req.token);
+    if (dev && dev.active) { touchDevice_(dev); return { ok: true, device: dev }; }
+    if (dev) {
+      const c = CacheService.getScriptCache();
+      if (!c.get('rv_' + dev.id)) { c.put('rv_' + dev.id, '1', 3600); logEvent_('blocked', dev.name, 'próba użycia usuniętego urządzenia'); }
+      return { ok: false, revoked: true, error: 'To urządzenie zostało odłączone. Połącz je ponownie kluczem albo kodem z innego urządzenia.' };
+    }
+    return { ok: false, revoked: true, error: 'Nie rozpoznaję tego urządzenia. Połącz je ponownie kluczem albo kodem.' };
+  }
   const real = PropertiesService.getScriptProperties().getProperty('API_KEY');
   if (!real) return { ok: false, error: 'Skrypt nie ma jeszcze klucza. Uruchom w edytorze Apps Script funkcję utworzKlucz.' };
-  if (typeof key !== 'string' || !sameText_(key.trim(), real)) return { ok: false, error: 'Niepoprawny klucz.' };
+  // Klucz ma ok. 180 bitów losowości, więc nie trzeba blokady (pozwalałaby obcemu odciąć właściciela złymi kluczami).
+  if (typeof req.key !== 'string' || !sameText_(req.key.trim(), real)) return { ok: false, error: 'Niepoprawny klucz.' };
+  return { ok: true, device: null };
+}
+
+/** Porównanie bez skracania przy pierwszej różnicy (czas nie zdradza, ile znaków się zgadza). */
+function sameText_(a, b) {
+  if (a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+
+/* ---------------- urządzenia ---------------- */
+
+const DEV_HEADER = ['ID', 'Nazwa', 'Urządzenie', 'Połączono', 'Ostatnio', 'Sposób', 'Status', 'Usunięto', 'Skrót przepustki'];
+
+function devicesSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(CFG.DEVICES_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(CFG.DEVICES_SHEET);
+    sh.appendRow(DEV_HEADER);
+    try {
+      sh.setFrozenRows(1);
+      sh.getRange(1, 1, 1, DEV_HEADER.length).setFontWeight('bold');
+      sh.getRange('D:E').setNumberFormat('yyyy-mm-dd hh:mm');
+      sh.getRange('H:H').setNumberFormat('yyyy-mm-dd hh:mm');
+    } catch (e) { /* formatowanie jest opcjonalne */ }
+  }
+  return sh;
+}
+
+function readDevices_() {
+  const sh = devicesSheet_();
+  const v = sh.getDataRange().getValues();
+  const out = [];
+  for (let r = 1; r < v.length; r++) {
+    if (isEmpty_(v[r][0])) continue;
+    out.push({
+      row: r + 1, id: String(v[r][0]), name: String(v[r][1] || ''), desc: String(v[r][2] || ''),
+      created: isDate_(v[r][3]) ? v[r][3] : null, seen: isDate_(v[r][4]) ? v[r][4] : null,
+      method: String(v[r][5] || ''), active: !/usuni/i.test(String(v[r][6] || '')),
+      removed: isDate_(v[r][7]) ? v[r][7] : null, hash: String(v[r][8] || '')
+    });
+  }
+  return out;
+}
+
+function sha256_(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s, Utilities.Charset.UTF_8)
+    .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+}
+
+function deviceByToken_(token) {
+  const hash = sha256_(token);
+  return readDevices_().filter(function (d) { return d.hash && sameText_(d.hash, hash); })[0] || null;
+}
+
+/** Ostatnia aktywność: zapis najwyżej co 10 minut na urządzenie (żeby nie spowalniać każdego zapytania). */
+function touchDevice_(dev) {
+  const c = CacheService.getScriptCache();
+  if (c.get('seen_' + dev.id)) return;
+  c.put('seen_' + dev.id, '1', 600);
+  devicesSheet_().getRange(dev.row, 5).setValue(new Date());
+}
+
+function cleanText_(s, max) { return String(s || '').replace(/[\u0000-\u001f<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max); }
+
+function registerDevice_(arg, method) {
+  arg = arg || {};
+  const name = cleanText_(arg.name, 40) || 'Urządzenie';
+  const desc = cleanText_(arg.desc, 80);
+  const token = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');   // 64 znaki szesnastkowe, ok. 240 bitów losowości
+  const id = Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  const now = new Date();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(15000);
+  try {
+    devicesSheet_().appendRow([id, name, desc, now, now, method, 'aktywne', '', sha256_(token)]);
+  } finally { lock.releaseLock(); }
+  logEvent_('connect', name, desc + (method === 'kod' ? ', kodem z innego urządzenia' : ', głównym kluczem'));
+  return { ok: true, token: token, id: id };
+}
+
+function renameDevice_(arg) {
+  const name = cleanText_(arg && arg.name, 40);
+  if (!name) throw new Error('Podaj nazwę urządzenia.');
+  const d = readDevices_().filter(function (x) { return x.id === String(arg.id); })[0];
+  if (!d) throw new Error('Nie znalazłem tego urządzenia.');
+  devicesSheet_().getRange(d.row, 2).setValue(name);
+  logEvent_('rename', name, 'wcześniej: ' + d.name);
   return { ok: true };
 }
 
+function removeDevice_(arg, who) {
+  const d = readDevices_().filter(function (x) { return x.id === String(arg && arg.id); })[0];
+  if (!d) throw new Error('Nie znalazłem tego urządzenia.');
+  if (!d.active) return { ok: true };
+  const sh = devicesSheet_();
+  sh.getRange(d.row, 7, 1, 2).setValues([['usunięte', new Date()]]);
+  logEvent_('remove', d.name, who.device && who.device.id === d.id ? 'na nim samym' : (who.device ? 'z urządzenia „' + who.device.name + '”' : 'kluczem głównym'));
+  return { ok: true, self: !!(who.device && who.device.id === d.id) };
+}
+
+/** Lista dla aplikacji: bez skrótów przepustek. Usunięte urządzenia z ostatnich 90 dni jako historia. */
+function devicesInfo_(currentId) {
+  const iso = function (d) { return d ? d.toISOString() : null; };
+  const limit = Date.now() - 90 * 864e5;
+  const list = readDevices_().filter(function (d) { return d.active || (d.removed && d.removed.getTime() > limit); }).map(function (d) {
+    return { id: d.id, name: d.name, desc: d.desc, created: iso(d.created), seen: iso(d.seen), method: d.method, active: d.active, removed: iso(d.removed), current: d.id === currentId };
+  });
+  return { list: list, events: readEvents_().slice(0, 30), current: currentId };
+}
+
+/* ---------------- historia zdarzeń (ostatnie 60, w ustawieniach skryptu) ---------------- */
+
+function readEvents_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty('DEV_EVENTS') || '[]'); } catch (e) { return []; }
+}
+
+function logEvent_(type, name, info) {
+  const props = PropertiesService.getScriptProperties();
+  const ev = readEvents_();
+  ev.unshift({ t: new Date().toISOString(), type: type, name: cleanText_(name, 40), info: cleanText_(info, 120) });
+  props.setProperty('DEV_EVENTS', JSON.stringify(ev.slice(0, 60)));
+}
+
+/* ---------------- parowanie kodem ---------------- */
+
 /**
- * Parowanie nowego urządzenia: połączone urządzenie prosi o 6-cyfrowy kod ważny 5 minut,
- * nowe urządzenie wymienia go raz na klucz. Po 10 błędnych kodach parowanie jest wyłączone na 15 minut
- * (dotyczy tylko parowania, nie zwykłego używania aplikacji).
+ * Połączone urządzenie prosi o 6-cyfrowy kod ważny 5 minut; nowe urządzenie wymienia go raz na własną przepustkę
+ * (główny klucz nigdy nie trafia na nowe urządzenie). Po 10 błędnych kodach parowanie jest wyłączone na 15 minut.
  */
 function pairStart_() {
   const cache = CacheService.getScriptCache();
@@ -112,33 +271,38 @@ function pairFinish_(arg) {
   const bad = Number(cache.get('pair_bad') || 0);
   if (bad >= 10) return { ok: false, error: 'Za dużo błędnych kodów. Parowanie wróci za 15 minut.' };
   const code = String(arg && arg.code || '').replace(/\D/g, '');
-  const real = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  if (code.length !== 6 || !real || !cache.get('pair_' + code)) {
+  if (code.length !== 6 || !cache.get('pair_' + code)) {
     cache.put('pair_bad', String(bad + 1), 900);
+    if (bad + 1 === 3 || bad + 1 === 10) logEvent_('pair_fail', '', (bad + 1) + ' błędne kody parowania w ciągu 15 minut');
     return { ok: false, error: 'Kod jest nieprawidłowy albo wygasł. Poproś o nowy na połączonym urządzeniu.' };
   }
   cache.remove('pair_' + code);   // kod działa tylko raz
-  return { ok: true, key: real };
+  return registerDevice_(arg, 'kod');
 }
 
-/** Porównanie bez skracania przy pierwszej różnicy (czas nie zdradza, ile znaków się zgadza). */
-function sameText_(a, b) {
-  if (a.length !== b.length) return false;
-  let d = 0;
-  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return d === 0;
-}
+/* ---------------- funkcje do uruchamiania ręcznie w edytorze ---------------- */
 
 /**
- * Uruchom ręcznie w edytorze (Uruchom → utworzKlucz). Klucz pojawi się w dzienniku wykonania.
- * Każde uruchomienie tworzy nowy klucz, a stary od razu przestaje działać na wszystkich urządzeniach.
+ * Uruchom → utworzKlucz. Nowy główny klucz pojawi się w dzienniku wykonania.
+ * Stary klucz przestaje działać. Połączone urządzenia działają dalej (mają własne przepustki);
+ * obce usuń w aplikacji (Plan → Urządzenia) albo uruchom odlaczWszystkieUrzadzenia.
  */
 function utworzKlucz() {
   const key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 48);   // 48 znaków szesnastkowych, ok. 180 bitów losowości
   PropertiesService.getScriptProperties().setProperty('API_KEY', key);
   CacheService.getScriptCache().remove('pair_bad');
+  logEvent_('key_new', '', 'utworzono nowy klucz główny');
   Logger.log('Nowy klucz do aplikacji (skopiuj go): ' + key);
   return key;
+}
+
+/** Awaryjnie: odłącza wszystkie urządzenia. Potem łączysz je od nowa kluczem i kodami. */
+function odlaczWszystkieUrzadzenia() {
+  const sh = devicesSheet_();
+  const now = new Date();
+  readDevices_().filter(function (d) { return d.active; }).forEach(function (d) { sh.getRange(d.row, 7, 1, 2).setValues([['usunięte', now]]); });
+  logEvent_('remove', 'wszystkie urządzenia', 'funkcją odlaczWszystkieUrzadzenia');
+  Logger.log('Wszystkie urządzenia odłączone.');
 }
 
 /** Czyta arkusz i zwraca gotowy model dashboardu. */

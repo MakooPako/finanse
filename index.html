@@ -546,6 +546,28 @@
   .pair-box { margin-top: 14px; padding: 16px; border-radius: 14px; background: var(--bg); }
   .pair-box p { margin: 6px 0 0; font-size: 14px; color: var(--text-2); }
   .pair-code { font-size: 40px; font-weight: 800; letter-spacing: .12em; color: var(--text); }
+  .dev-list { list-style: none; margin: 4px 0 0; padding: 0; }
+  .dev { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .dev:first-child { border-top: 0; }
+  .dev-ico { width: 40px; height: 40px; border-radius: 12px; background: var(--surface-2); display: grid; place-items: center; color: var(--text-2); }
+  .dev-ico svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .dev.me .dev-ico { color: #6da7ec; }
+  .dev.fresh .dev-ico { color: var(--critical); box-shadow: 0 0 0 1.5px var(--critical); }
+  .dev .nm { font-weight: 600; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dev .sub { font-size: 13.5px; color: var(--muted); }
+  .dev .acts { display: flex; gap: 14px; margin-top: 4px; }
+  .dev .acts .edit { padding-left: 0; }
+  .badge { font-size: 12px; font-weight: 700; color: #6da7ec; background: rgba(57,135,229,.14); border-radius: 99px; padding: 2px 9px; }
+  .edit.warn-txt { color: #ff9b9b; }
+  .edit[data-armed] { color: var(--text); text-decoration-color: var(--critical); }
+  .dev-rename { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; }
+  .dev-rename input { flex: 1; min-width: 140px; font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .dev-events { list-style: none; margin: 0; padding: 0 0 6px; font-size: 13.5px; color: var(--text-2); }
+  .dev-events li { display: grid; grid-template-columns: 112px 1fr; gap: 10px; padding: 5px 0; }
+  .dev-events .t { color: var(--muted); white-space: nowrap; }
+  .dev-events .ev-blocked, .dev-events .ev-pair_fail { color: #ffb0b0; }
+  .alert-acts { display: inline-flex; gap: 12px; margin-left: 4px; }
+  .alert-acts .edit { padding-left: 0; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .sk, .sync.busy span:first-child::before, body.syncing [data-refresh] svg, .view:not([hidden]) { animation: none; } }
 </style>
@@ -651,7 +673,7 @@
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8DdTLrFBEPKO_BsAJ5Aqjeo9bY7dGPmosTWO34JbwNCPkx5H_ZTgUTzXGgiFdmPMZ8g/exec';
 </script>
 <script>
-const CLIENT_VERSION = '10';
+const CLIENT_VERSION = '11';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -703,6 +725,48 @@ function startApp(initial) {
       const ev = INSTALL; INSTALL = null;
       ev.prompt(); try { await ev.userChoice; } catch (err) { /* anulowano */ }
       const y = window.scrollY; render(); window.scrollTo(0, y);
+      return;
+    }
+    const ack = e.target.closest('[data-dev-ack]');
+    if (ack) { window.markKnownDevices(null, [ack.dataset.devAck]); const y = window.scrollY; render(); window.scrollTo(0, y); toast('Dzięki. To urządzenie jest teraz na liście znanych.'); return; }
+    const rn = e.target.closest('[data-dev-rename]');
+    if (rn) {
+      const li = rn.closest('li.dev'), id = rn.dataset.devRename, d = D.devices.list.find(x => x.id === id);
+      const nm = li.querySelector('.nm');
+      nm.innerHTML = `<form class="dev-rename"><input maxlength="40" value="${esc(d.name)}" aria-label="Nowa nazwa urządzenia"><button type="submit" class="btn-sm">Zapisz</button><button type="button" class="edit" data-dev-cancel>Anuluj</button></form>`;
+      const inp = nm.querySelector('input'); inp.focus(); inp.select();
+      nm.querySelector('[data-dev-cancel]').addEventListener('click', () => { const y = window.scrollY; render(); window.scrollTo(0, y); });
+      nm.querySelector('form').addEventListener('submit', async ev => {
+        ev.preventDefault();
+        const name = inp.value.trim(); if (!name) return;
+        try {
+          const r = await call('renameDevice', { id, name });
+          if (!r.ok) throw new Error(r.error);
+          D.devices = r.devices; window.saveCache(D); const y = window.scrollY; render(); window.scrollTo(0, y);
+          toast('Zmieniono nazwę na „' + esc(name) + '”.');
+        } catch (err) { toast('Nie udało się zmienić nazwy: ' + esc(err.message || err)); }
+      });
+      return;
+    }
+    const rm = e.target.closest('[data-dev-remove]');
+    if (rm) {
+      const id = rm.dataset.devRemove, d = (D.devices.list || []).find(x => x.id === id) || { name: 'urządzenie' };
+      // potwierdzenie drugim dotknięciem; stan trzymany poza przyciskiem, bo odświeżenie w tle przerysowuje listę
+      if (!(DEV_ARMED.id === id && DEV_ARMED.until > Date.now())) {
+        DEV_ARMED.id = id; DEV_ARMED.until = Date.now() + 4000;
+        document.querySelectorAll(`[data-dev-remove="${id}"]`).forEach(b => { b.dataset.armed = '1'; b.textContent = 'Na pewno?'; });
+        setTimeout(() => { if (DEV_ARMED.id === id && DEV_ARMED.until <= Date.now()) { DEV_ARMED.id = null; const y = window.scrollY; render(); window.scrollTo(0, y); } }, 4100);
+        return;
+      }
+      DEV_ARMED.id = null;
+      rm.disabled = true;
+      try {
+        const r = await call('removeDevice', { id });
+        if (!r.ok) throw new Error(r.error);
+        if (r.self) { window.forgetDevice(); location.reload(); return; }
+        D.devices = r.devices; window.saveCache(D); const y = window.scrollY; render(); window.scrollTo(0, y);
+        toast('Usunięto „' + esc(d.name) + '”. To urządzenie straciło dostęp do arkusza.');
+      } catch (err) { rm.disabled = false; toast('Nie udało się usunąć: ' + esc(err.message || err)); }
       return;
     }
     const pb = e.target.closest('[data-pair]');
@@ -771,6 +835,60 @@ function startApp(initial) {
     warn: { cls: 'warning', label: 'blisko limitu', ico: '!', col: 'var(--warning)' },
     over: { cls: 'critical', label: 'ponad limit', ico: '✕', col: 'var(--critical)' }
   };
+  /* ================= urządzenia ================= */
+  const two = n => String(n).padStart(2, '0');
+  function whenTxt(iso) {
+    if (!iso) return '–';
+    const d = new Date(iso), now = new Date();
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), dd = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const hm = two(d.getHours()) + ':' + two(d.getMinutes());
+    if (dd === day) return 'dziś ' + hm;
+    if (day - dd === 864e5) return 'wczoraj ' + hm;
+    return d.getDate() + ' ' + MONTHS_SHORT[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? ' ' + d.getFullYear() : '') + ' ' + hm;
+  }
+  const DEV_ARMED = { id: null, until: 0 };
+  const armedTxt = (id, txt) => DEV_ARMED.id === id && DEV_ARMED.until > Date.now() ? 'Na pewno?' : txt;
+  function knownDevices() { try { return JSON.parse(localStorage.getItem('finanse.knownDevices') || '[]'); } catch (e) { return []; } }
+  function newDevices() {
+    if (!D.devices) return [];
+    const known = knownDevices();
+    return D.devices.list.filter(d => d.active && !d.current && known.indexOf(d.id) < 0);
+  }
+  const DEV_ICON = {
+    phone: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg>',
+    pc: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M9 20h6M12 16.5V20"/></svg>'
+  };
+  const EVENT_TXT = {
+    connect: e => `Połączono „${esc(e.name)}”: ${esc(e.info)}`,
+    remove: e => `Usunięto „${esc(e.name)}” ${esc(e.info)}`,
+    rename: e => `Nowa nazwa „${esc(e.name)}” (${esc(e.info)})`,
+    blocked: e => `Zablokowano „${esc(e.name)}”: ${esc(e.info)}`,
+    pair_fail: e => `Błędne kody parowania: ${esc(e.info)}`,
+    key_new: () => 'Utworzono nowy klucz główny'
+  };
+  function devicesPanel() {
+    const DV = D.devices;
+    const head = `<div class="panel-head"><div><h2 id="h-dev">Urządzenia</h2>
+      <p class="desc">${DV ? 'Te urządzenia mają dostęp do Twojego arkusza. Jeśli widzisz obce, usuń je, a dla pewności utwórz nowy klucz w Apps Script.' : 'Żeby zobaczyć listę urządzeń, wklej w Apps Script nowy Code.gs (wersja 11).'}</p></div>
+      <button type="button" class="btn-sm" data-pair>+ Połącz nowe</button></div>
+      <div class="pair-box" id="pairBox" hidden></div>`;
+    const install = INSTALL ? '<div class="dev-acts"><button type="button" class="btn-sm" data-install>Zainstaluj aplikację na tym urządzeniu</button></div>' : '';
+    if (!DV) return `<section class="panel device" aria-labelledby="h-dev">${head}${install}<div class="dev-acts"><button type="button" class="btn-sm warn-sm" data-unlink>Odłącz to urządzenie</button></div></section>`;
+    const active = DV.list.filter(d => d.active).sort((a, b) => (b.current - a.current) || String(b.seen).localeCompare(String(a.seen)));
+    const removed = DV.list.filter(d => !d.active);
+    const known = knownDevices();
+    const row = d => `<li class="dev${d.current ? ' me' : ''}${!d.current && known.indexOf(d.id) < 0 ? ' fresh' : ''}" data-dev="${esc(d.id)}">
+      <span class="dev-ico">${/Android|iOS|iPad|Telefon|Tablet/i.test(d.desc + ' ' + d.name) ? DEV_ICON.phone : DEV_ICON.pc}</span>
+      <div class="dev-body"><div class="nm"><span class="dev-name">${esc(d.name)}</span>${d.current ? '<span class="badge">to urządzenie</span>' : ''}</div>
+        ${d.desc ? `<div class="sub">${esc(d.desc)}</div>` : ''}
+        <div class="sub">połączone ${whenTxt(d.created)}${d.method === 'kod' ? ' kodem' : d.method === 'klucz' ? ' kluczem' : ''}, ostatnio ${d.current ? 'teraz' : whenTxt(d.seen)}</div>
+        <div class="acts"><button type="button" class="edit" data-dev-rename="${esc(d.id)}">Zmień nazwę</button><button type="button" class="edit warn-txt" data-dev-remove="${esc(d.id)}">${armedTxt(d.id, d.current ? 'Odłącz to urządzenie' : 'Usuń')}</button></div>
+      </div></li>`;
+    const hist = DV.events.length || removed.length ? `<details class="paid-more" data-keep="devhist"${OPEN_CATS.has('devhist') ? ' open' : ''}><summary><span>Historia <small>${DV.events.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary>
+      <ul class="dev-events">${DV.events.map(e => `<li class="ev-${esc(e.type)}"><span class="t">${whenTxt(e.t)}</span><span>${(EVENT_TXT[e.type] || (x => esc(x.info)))(e)}</span></li>`).join('')}</ul></details>` : '';
+    return `<section class="panel device" aria-labelledby="h-dev">${head}<ul class="dev-list">${active.map(row).join('')}</ul>${install}${hist}</section>`;
+  }
+
   function render() {
   const cur = D.current;
   const t = D.today;
@@ -820,6 +938,7 @@ function startApp(initial) {
   if (D.unpaid.length) alerts.push({ s: 'warn', t: `<b>Do zapłaty</b>: ${D.unpaid.map(u => esc(u.block) + ', ' + esc(labelFor(u.block, u.col)) + (u.amount ? ' <span class="num">' + zl(u.amount) + '</span>' : '')).join('; ')}.` });
   D.missing.forEach(x => alerts.push({ s: 'warn', t: `<b>Do uzupełnienia w arkuszu</b>: ${esc(x.block)}, ${esc(x.col)} (${x.month.toLowerCase()}), „${esc(x.text)}”.` }));
   D.warnings.forEach(w => alerts.push({ s: 'warn', t: esc(w) }));
+  newDevices().forEach(d => alerts.push({ s: 'over', t: `<b>Nowe urządzenie: ${esc(d.name)}</b>${d.desc ? ` (${esc(d.desc)})` : ''}, połączone ${whenTxt(d.created)}. To Twoje? <span class="alert-acts"><button type="button" class="edit" data-dev-ack="${esc(d.id)}">Tak, moje</button><button type="button" class="edit warn-txt" data-dev-remove="${esc(d.id)}">Usuń je</button></span>` }));
   if (alerts.length) {
     V.teraz += `<ul class="alerts" aria-label="Alerty">${alerts.map(a => `<li><span class="ico ${STATE[a.s].cls}" aria-label="${STATE[a.s].label}">${STATE[a.s].ico}</span><div>${a.t}</div></li>`).join('')}</ul>`;
   }
@@ -1008,15 +1127,7 @@ function startApp(initial) {
       <p class="tax-msg">${msg}</p>
     </section>`;
   }
-  V.plan += `<section class="panel device" aria-labelledby="h-dev"><h2 id="h-dev">To urządzenie</h2>
-    <p class="desc">Połączone z Twoim arkuszem. Żeby dodać telefon albo inny komputer, poproś o kod i wpisz go na nowym urządzeniu.</p>
-    <div class="dev-acts">
-      <button type="button" class="btn-sm" data-pair>Połącz nowe urządzenie</button>
-      ${INSTALL ? '<button type="button" class="btn-sm" data-install>Zainstaluj aplikację</button>' : ''}
-      <button type="button" class="btn-sm warn-sm" data-unlink>Odłącz to urządzenie</button>
-    </div>
-    <div class="pair-box" id="pairBox" hidden></div>
-  </section>`;
+  V.plan += devicesPanel();
   V.plan += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && D.version !== CLIENT_VERSION ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
 
   document.getElementById('app').innerHTML = Object.keys(V).map(k => `<div class="view" data-tabview="${k}"${k === TAB ? '' : ' hidden'}>${V[k]}</div>`).join('');
@@ -1928,21 +2039,53 @@ function startApp(initial) {
   const CONN = 'finanse.conn';
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); window.__installPrompt = e; });
   const read = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
-  window.getConn = () => { const c = read(CONN); return c && c.url && c.key ? c : null; };
-  window.saveConn = c => { try { localStorage.setItem(CONN, JSON.stringify({ url: c.url, key: c.key, at: Date.now() })); } catch (e) { /* bez pamięci przeglądarki */ } };
-  window.forgetDevice = () => { try { localStorage.removeItem(CONN); localStorage.removeItem('finanse.cache'); } catch (e) { /* bez pamięci */ } };
+  // Połączenie: adres skryptu + przepustka tego urządzenia (token). Starsze połączenia (przed v11) miały klucz główny – zamieniamy je na przepustkę.
+  window.getConn = () => { const c = read(CONN); return c && c.url && (c.token || c.key) ? c : null; };
+  window.saveConn = c => { try { localStorage.setItem(CONN, JSON.stringify(c.token ? { url: c.url, token: c.token, id: c.id, at: Date.now() } : { url: c.url, key: c.key, at: Date.now() })); } catch (e) { /* bez pamięci przeglądarki */ } };
+  // Opis urządzenia do listy „Urządzenia”: system, model (jeśli przeglądarka go poda) i przeglądarka. Bez numerów seryjnych – przeglądarki ich nie udostępniają.
+  window.deviceInfo = async () => {
+    const ua = navigator.userAgent || '';
+    const uad = navigator.userAgentData;
+    let os = '', model = '', mobile = /Android|iPhone|iPad|Mobile/i.test(ua);
+    if (uad && uad.getHighEntropyValues) {
+      try {
+        const h = await uad.getHighEntropyValues(['model', 'platformVersion']);
+        mobile = !!uad.mobile || mobile;
+        const pv = parseInt(String(h.platformVersion || '').split('.')[0], 10);
+        if (uad.platform === 'Windows') os = pv >= 13 ? 'Windows 11' : (pv > 0 ? 'Windows 10' : 'Windows');
+        else if (uad.platform === 'Android') os = 'Android' + (pv ? ' ' + pv : '');
+        else if (uad.platform === 'macOS') os = 'macOS';
+        else os = uad.platform || '';
+        model = String(h.model || '').trim();
+      } catch (e) { /* bez szczegółów */ }
+    }
+    if (!os) {
+      const m = ua.match(/Android (\d+)/); if (m) os = 'Android ' + m[1];
+      else if (/iPhone|iPad/.test(ua)) os = /iPad/.test(ua) ? 'iPadOS' : 'iOS';
+      else if (/Windows NT 10/.test(ua)) os = 'Windows 10 lub 11';
+      else if (/Mac OS X/.test(ua)) os = 'macOS';
+      else if (/Linux/.test(ua)) os = 'Linux';
+    }
+    if (!model) { const m = ua.match(/Android [\d.]+; ([^;)]+)\)/); if (m && m[1] !== 'K') model = m[1].trim(); }
+    let browser = navigator.brave ? 'Brave' : /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Firefox\//.test(ua) ? 'Firefox' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'przeglądarka';
+    if (window.matchMedia && matchMedia('(display-mode: standalone)').matches) browser += ', zainstalowana';
+    const desc = [os, model, browser].filter(Boolean).join(', ');
+    const name = mobile ? (/iPad|tablet/i.test(ua) ? 'Tablet' : 'Telefon') : 'Komputer';
+    return { desc, name, mobile };
+  };
+  window.forgetDevice = () => { try { localStorage.removeItem(CONN); localStorage.removeItem('finanse.cache'); localStorage.removeItem('finanse.knownDevices'); } catch (e) { /* bez pamięci */ } };
   // Zapytanie do skryptu: POST jako text/plain (bez zapytania wstępnego CORS), klucz w treści, nie w adresie.
   window.api = (fn, arg, conn) => {
     conn = conn || window.getConn();
     if (!conn || !conn.url) return Promise.reject(Object.assign(new Error('To urządzenie nie jest połączone z arkuszem.'), { auth: true }));
     const ctrl = window.AbortController ? new AbortController() : null;
     const timer = setTimeout(() => ctrl && ctrl.abort(), 45000);
-    return fetch(conn.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ key: conn.key || '', fn, arg: arg === undefined ? null : arg }), signal: ctrl ? ctrl.signal : undefined, cache: 'no-store', redirect: 'follow' })
+    return fetch(conn.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign(conn.token ? { token: conn.token } : { key: conn.key || '' }, { fn, arg: arg === undefined ? null : arg })), signal: ctrl ? ctrl.signal : undefined, cache: 'no-store', redirect: 'follow' })
       .then(r => { if (!r.ok) throw new Error('Skrypt odpowiedział błędem ' + r.status + '.'); return r.text(); })
       .then(t => {
         let j;
         try { j = JSON.parse(t); } catch (e) { throw new Error(/<html/i.test(t) ? 'Skrypt nie działa jeszcze jako źródło danych. Sprawdź, czy wdrożenie ma dostęp „Każdy” i nową wersję kodu.' : 'Niepoprawna odpowiedź skryptu.'); }
-        if (j && j.ok === false && j.auth) throw Object.assign(new Error(j.error || 'Brak dostępu.'), { auth: true });
+        if (j && j.ok === false && j.auth) throw Object.assign(new Error(j.error || 'Brak dostępu.'), { auth: true, revoked: !!j.revoked });
         return j;
       }, e => {
         if (e && e.name === 'AbortError') throw new Error('Arkusz nie odpowiedział w ciągu 45 sekund. Spróbuj ponownie.');
@@ -1981,12 +2124,32 @@ function startApp(initial) {
     document.body.classList.remove('booting', 'setup');
     app = startApp(model);
   }
-  function refresh() {
+  // Znane urządzenia: przy pierwszym połączeniu wszystkie obecne uznajemy za swoje; każde następne nowe wywoła pytanie „To Twoje?”.
+  window.markKnownDevices = (m, ids) => {
+    try {
+      const cur = JSON.parse(localStorage.getItem('finanse.knownDevices') || 'null');
+      const all = ids || (m && m.devices ? m.devices.list.map(d => d.id) : []);
+      localStorage.setItem('finanse.knownDevices', JSON.stringify(Array.from(new Set((cur || []).concat(all)))));
+    } catch (e) { /* bez pamięci */ }
+  };
+  async function migrate() {
+    // połączenie sprzed v11 (klucz główny w przeglądarce) → własna przepustka urządzenia, klucz znika z urządzenia
+    const c = window.getConn();
+    if (!c || c.token || !c.key) return;
+    try {
+      const info = await window.deviceInfo();
+      const r = await window.api('register', { name: info.name + (info.desc ? ' (' + info.desc.split(', ')[0] + ')' : ''), desc: info.desc }, c);
+      if (r && r.ok && r.token) window.saveConn({ url: c.url, token: r.token, id: r.id });
+    } catch (e) { /* skrypt sprzed v11 albo brak sieci – spróbujemy przy następnym otwarciu */ }
+  }
+  async function refresh() {
     if (!window.getConn()) return;
     status('busy', '');
+    await migrate();
     window.api('refreshData').then(m => {
       if (!m || m.ok === false) throw new Error(m && m.error || 'Skrypt nie zwrócił danych.');
       checkVersion(m.version);
+      try { if (m.devices && localStorage.getItem('finanse.knownDevices') === null) window.markKnownDevices(m); } catch (e) { /* bez pamięci */ }
       window.saveCache(m);
       if (app) app.apply(m); else start(m);
       status('', '');
@@ -2021,6 +2184,8 @@ function startApp(initial) {
         <p class="hint-avg" id="suCodeHint" hidden>Na urządzeniu, które już działa: Plan → To urządzenie → Połącz nowe urządzenie. Kod jest ważny 5 minut.</p>
         <label class="field" id="suKeyRow" hidden><span>Klucz</span><input id="suKey" autocomplete="off" spellcheck="false" placeholder="48 znaków z Apps Script"></label>
         <p class="hint-avg" id="suKeyHint" hidden>Klucz tworzysz w Apps Script: Uruchom → utworzKlucz, a potem skopiuj go z dziennika wykonania.</p>
+        <label class="field"><span>Nazwa tego urządzenia</span><input id="suName" maxlength="40" autocomplete="off" placeholder="np. Telefon Maćka"></label>
+        <p class="hint-avg">Pod tą nazwą zobaczysz je na liście urządzeń. Możesz ją później zmienić.</p>
         <p class="err" id="suErr" role="alert">${message ? escHtml(message) : ''}</p>
         <button class="save" id="suGo" type="submit">Połącz</button>
       </form>
@@ -2036,6 +2201,7 @@ function startApp(initial) {
       $s('suErr').textContent = '';
       (mode === 'code' ? $s('suCode') : $s('suKey')).focus();
     }));
+    window.deviceInfo().then(i => { const n = $s('suName'); if (n && !n.value) n.value = i.name + (i.desc ? ' (' + i.desc.split(', ')[0] + ')' : ''); });
     $s('suBack').addEventListener('click', () => { $s('setupForm').hidden = true; $s('suChoices').hidden = false; $s('suErr').textContent = ''; });
     if (message) { $s('suChoices').hidden = true; $s('setupForm').hidden = false; $s('suKeyRow').hidden = $s('suKeyHint').hidden = false; }
     $s('suCode').addEventListener('input', e => { const d = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = d.length > 3 ? d.slice(0, 3) + ' ' + d.slice(3) : d; });
@@ -2047,17 +2213,27 @@ function startApp(initial) {
       if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url)) { err.textContent = 'Wklej pełny adres wdrożenia z Apps Script. Kończy się na /exec.'; return; }
       go.disabled = true; go.textContent = 'Łączę…';
       try {
-        let key = mode === 'key' ? $s('suKey').value.trim() : '';
+        const info = await window.deviceInfo();
+        const name = ($s('suName').value || info.name).trim();
+        let conn;
         if (mode === 'code') {
           const code = $s('suCode').value.replace(/\D/g, '');
           if (code.length !== 6) throw new Error('Wpisz 6 cyfr kodu.');
-          const r = await window.api('pairFinish', { code }, { url, key: '' });
+          const r = await window.api('pairFinish', { code, name, desc: info.desc }, { url, key: '' });
           if (!r || !r.ok) throw new Error(r && r.error || 'Nie udało się sparować.');
-          key = r.key;
-        } else if (key.length < 20) throw new Error('Wklej cały klucz z Apps Script.');
-        const m = await window.api('refreshData', null, { url, key });
+          conn = r.token ? { url, token: r.token, id: r.id } : { url, key: r.key };   // r.key: skrypt sprzed v11
+        } else {
+          const key = $s('suKey').value.trim();
+          if (key.length < 20) throw new Error('Wklej cały klucz z Apps Script.');
+          const r = await window.api('register', { name, desc: info.desc }, { url, key });
+          if (r && r.ok && r.token) conn = { url, token: r.token, id: r.id };
+          else if (r && /Nieznana operacja/.test(r.error || '')) conn = { url, key };   // skrypt sprzed v11: zostajemy przy kluczu
+          else throw new Error(r && r.error || 'Nie udało się połączyć.');
+        }
+        const m = await window.api('refreshData', null, conn);
         if (!m || m.ok === false || !m.year) throw new Error(m && m.error || 'Skrypt nie zwrócił danych.');
-        window.saveConn({ url, key });
+        window.saveConn(conn);
+        window.markKnownDevices(m);
         window.saveCache(m);
         checkVersion(m.version);
         start(m);
