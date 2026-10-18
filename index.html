@@ -567,6 +567,14 @@
   .dev-events .t { color: var(--muted); white-space: nowrap; }
   .dev-events .ev-blocked, .dev-events .ev-pair_fail { color: #ffb0b0; }
   .alert-acts { display: inline-flex; gap: 12px; margin-left: 4px; }
+  .ib { position: relative; }
+  .ib[aria-current="page"] { background: var(--surface-2); color: #6da7ec; }
+  .ib .dot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--critical); box-shadow: 0 0 0 2px var(--bg); display: none; }
+  body.dev-alert .ib-sec .dot { display: block; }
+  .sub-head { padding: 4px 2px 6px; }
+  .sub-head .linkish { font-size: 14px; }
+  .sub-head h1 { margin: 10px 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+  .sub-head p { margin: 0; color: var(--text-2); font-size: 14px; }
   .alert-acts .edit { padding-left: 0; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .sk, .sync.busy span:first-child::before, body.syncing [data-refresh] svg, .view:not([hidden]) { animation: none; } }
@@ -583,6 +591,7 @@
     <button type="button" data-tab="wpisy" class="tb-log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5H20M9.5 12H20M9.5 17.5H20"/><circle cx="5" cy="6.5" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="17.5" r="1"/></svg><span>Wpisy</span></button>
   </nav>
   <div class="ab-act">
+    <button type="button" class="ib ib-sec" data-tab="urzadzenia" aria-label="Urządzenia i dostęp"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.2 5 6v5.3c0 4.3 2.9 8.2 7 9.5 4.1-1.3 7-5.2 7-9.5V6z"/><path d="m9 12 2.1 2.1L15.2 10"/></svg><i class="dot" aria-hidden="true"></i></button>
     <button type="button" class="ib" data-refresh aria-label="Odśwież dane"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.2h-4.2"/></svg></button>
     <a class="ib" id="abSheet" href="#" target="_blank" rel="noopener" aria-label="Otwórz arkusz" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M4 9.5h16M4 15h16M10 9.5V20"/></svg></a>
     <button type="button" class="ab-add" data-entry-new><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Dodaj wpis</button>
@@ -708,7 +717,8 @@ function startApp(initial) {
   const BLOCK_COLOR = { mieszkanie: '#3987e5', nieistotne: '#d95926', wazne: '#199e70', auto: '#c98500', tbs: '#d55181', kredyt: '#008300', wakacje: '#9085e9', other: '#5b6779' };
   const colorOf = id => BLOCK_COLOR[id] || '#5b6779';
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A';
-  const TABS = ['teraz', 'wydatki', 'plan', 'wpisy'];
+  const TABS = ['teraz', 'wydatki', 'plan', 'wpisy', 'urzadzenia'];
+  let PREV_TAB = 'teraz';   // dokąd wraca „‹ Wróć” z ekranu Urządzenia
   const OPEN_CATS = new Set();
   try {
     VIEW = localStorage.getItem('finanse.view') === 'structure' ? 'structure' : 'balance';
@@ -799,6 +809,7 @@ function startApp(initial) {
   /* ================= zakładki: Teraz / Wydatki / Plan / Wpisy ================= */
   function syncTabbar() {
     document.querySelectorAll('[data-tab]').forEach(b => { if (b.dataset.tab === TAB) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    document.body.classList.toggle('dev-alert', newDevices().length > 0);   // czerwona kropka na ikonie tarczy
   }
   function drawVisible() {
     if (TAB === 'wydatki') drawYear();
@@ -807,7 +818,9 @@ function startApp(initial) {
   function setTab(name, keepScroll) {
     if (TABS.indexOf(name) < 0) return;
     if (name === 'wpisy' && isWide()) name = 'teraz';
-    TAB = name; store('finanse.tab', name);
+    if (name === 'urzadzenia' && TAB !== 'urzadzenia') PREV_TAB = TAB;
+    if (name === 'urzadzenia' && TAB === 'urzadzenia') name = PREV_TAB;   // drugie dotknięcie ikony wraca
+    TAB = name; store('finanse.tab', name === 'urzadzenia' ? PREV_TAB : name);
     document.querySelectorAll('[data-tabview]').forEach(v => { v.hidden = v.dataset.tabview !== name; });
     syncTabbar();
     if (!keepScroll) window.scrollTo(0, 0);
@@ -893,7 +906,7 @@ function startApp(initial) {
   const cur = D.current;
   const t = D.today;
   const wide = isWide();
-  const V = { teraz: '', wydatki: '', plan: '', wpisy: '' };
+  const V = { teraz: '', wydatki: '', plan: '', wpisy: '', urzadzenia: '' };
   const fcCur = (D.forecast || []).find(f => f.isCurrent);
 
   /* ================= pasek aplikacji (poza #app, aktualizowany przy każdym render) ================= */
@@ -1127,7 +1140,14 @@ function startApp(initial) {
       <p class="tax-msg">${msg}</p>
     </section>`;
   }
-  V.plan += devicesPanel();
+  V.urzadzenia = `<div class="sub-head"><button type="button" class="linkish" data-goto="${PREV_TAB}">‹ Wróć</button><h1>Urządzenia i dostęp</h1>
+      <p>Tu zarządzasz tym, kto ma dostęp do Twojego arkusza. Dane finansowe są w pozostałych zakładkach.</p></div>` + devicesPanel() +
+    `<section class="panel" aria-labelledby="h-acc"><h2 id="h-acc">Jak działa dostęp</h2><ul class="plain">
+      <li>Każde urządzenie ma własną przepustkę. Usunięte traci dostęp od razu.</li>
+      <li>Kolejne urządzenia łączysz 6-cyfrowym kodem, ważnym 5 minut i tylko raz.</li>
+      <li>Główny klucz służy tylko do połączenia pierwszego urządzenia. Nowy tworzysz w Apps Script funkcją utworzKlucz.</li>
+      <li>Awaryjnie funkcja odlaczWszystkieUrzadzenia w Apps Script odłącza wszystkie urządzenia naraz.</li>
+    </ul><p class="total">Aplikacja v${CLIENT_VERSION}${D.version ? `, skrypt v${esc(D.version)}` : ''}.${D.sheetUrl ? ` <a href="${esc(D.sheetUrl)}" target="_blank" rel="noopener">Otwórz arkusz</a>` : ''}</p></section>`;
   V.plan += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && D.version !== CLIENT_VERSION ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
 
   document.getElementById('app').innerHTML = Object.keys(V).map(k => `<div class="view" data-tabview="${k}"${k === TAB ? '' : ' hidden'}>${V[k]}</div>`).join('');
