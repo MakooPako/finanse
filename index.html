@@ -528,7 +528,13 @@
   .setup-ico { display: block; width: 72px; height: 72px; border-radius: 18px; margin-bottom: 20px; box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.4); }
   .setup h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; }
   .setup-lead { color: var(--text-2); margin: 0 0 20px; }
-  .setup-seg { display: grid; grid-template-columns: 1fr 1fr; margin-bottom: 18px; }
+  .setup-choices { display: grid; gap: 10px; }
+  .choice { position: relative; display: block; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 16px; padding: 16px 44px 16px 18px; font: inherit; cursor: pointer; }
+  .choice:hover { border-color: #3a4a62; background: var(--surface-2); }
+  .choice b { display: block; font-size: 16px; font-weight: 700; }
+  .choice span { display: block; font-size: 14px; color: var(--text-2); margin-top: 2px; }
+  .choice i { position: absolute; right: 18px; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 26px; color: var(--muted); }
+  .su-back { margin: 0 0 14px; font-size: 14px; }
   .setup .field input { width: 100%; }
   .code-in { font-size: 30px !important; font-weight: 700; letter-spacing: .18em; text-align: center; font-variant-numeric: tabular-nums; }
   .setup button.save { position: static; box-shadow: none; margin-top: 6px; }
@@ -642,7 +648,7 @@
 <script>
 /* Adres Twojego skryptu Apps Script (kończy się na /exec). Pusty = aplikacja zapyta o niego przy pierwszym połączeniu.
    Sam adres nic nie zdradza: bez klucza skrypt nie zwraca żadnych danych. */
-const SCRIPT_URL = '';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby8DdTLrFBEPKO_BsAJ5Aqjeo9bY7dGPmosTWO34JbwNCPkx5H_ZTgUTzXGgiFdmPMZ8g/exec';
 </script>
 <script>
 const CLIENT_VERSION = '10';
@@ -2004,13 +2010,15 @@ function startApp(initial) {
       <img class="setup-ico" src="icons/icon-192.png" alt="" width="64" height="64">
       <h1 id="h-setup">Połącz to urządzenie</h1>
       <p class="setup-lead">Robisz to tylko raz. Potem aplikacja otwiera się od razu, a dane biorą się z Twojego arkusza.</p>
-      <div class="seg-sm setup-seg" role="group" aria-label="Sposób połączenia">
-        <button type="button" data-mode="code" aria-pressed="true">Kod z innego urządzenia</button><button type="button" data-mode="key" aria-pressed="false">Klucz</button>
+      <div class="setup-choices" id="suChoices">
+        <button type="button" class="choice" data-mode="key"><b>Pierwsze urządzenie</b><span>Mam klucz utworzony w Apps Script</span><i aria-hidden="true">›</i></button>
+        <button type="button" class="choice" data-mode="code"><b>Kolejne urządzenie</b><span>Mam 6-cyfrowy kod z urządzenia, na którym aplikacja już działa</span><i aria-hidden="true">›</i></button>
       </div>
-      <form id="setupForm" novalidate>
+      <form id="setupForm" novalidate hidden>
+        <button type="button" class="linkish su-back" id="suBack">‹ Zmień sposób połączenia</button>
         ${needUrl ? `<label class="field"><span>Adres skryptu (kończy się na /exec)</span><input id="suUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label>` : ''}
-        <label class="field" id="suCodeRow"><span>Kod parowania (6 cyfr)</span><input id="suCode" class="code-in" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000"></label>
-        <p class="hint-avg" id="suCodeHint">Na urządzeniu, które już działa: Plan → To urządzenie → Połącz nowe urządzenie. Kod jest ważny 5 minut.</p>
+        <label class="field" id="suCodeRow" hidden><span>Kod parowania (6 cyfr)</span><input id="suCode" class="code-in" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000 000"></label>
+        <p class="hint-avg" id="suCodeHint" hidden>Na urządzeniu, które już działa: Plan → To urządzenie → Połącz nowe urządzenie. Kod jest ważny 5 minut.</p>
         <label class="field" id="suKeyRow" hidden><span>Klucz</span><input id="suKey" autocomplete="off" spellcheck="false" placeholder="48 znaków z Apps Script"></label>
         <p class="hint-avg" id="suKeyHint" hidden>Klucz tworzysz w Apps Script: Uruchom → utworzKlucz, a potem skopiuj go z dziennika wykonania.</p>
         <p class="err" id="suErr" role="alert">${message ? escHtml(message) : ''}</p>
@@ -2018,16 +2026,18 @@ function startApp(initial) {
       </form>
       <p class="setup-foot">Klucz zostaje tylko na tym urządzeniu. Bez niego skrypt nie pokaże nikomu Twoich danych.</p>
     </section>`;
-    let mode = 'code';
+    let mode = 'key';
     const $s = id => document.getElementById(id);
     appEl.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
       mode = b.dataset.mode;
-      appEl.querySelectorAll('[data-mode]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      $s('suChoices').hidden = true; $s('setupForm').hidden = false;
       $s('suCodeRow').hidden = $s('suCodeHint').hidden = mode !== 'code';
       $s('suKeyRow').hidden = $s('suKeyHint').hidden = mode !== 'key';
       $s('suErr').textContent = '';
       (mode === 'code' ? $s('suCode') : $s('suKey')).focus();
     }));
+    $s('suBack').addEventListener('click', () => { $s('setupForm').hidden = true; $s('suChoices').hidden = false; $s('suErr').textContent = ''; });
+    if (message) { $s('suChoices').hidden = true; $s('setupForm').hidden = false; $s('suKeyRow').hidden = $s('suKeyHint').hidden = false; }
     $s('suCode').addEventListener('input', e => { const d = e.target.value.replace(/\D/g, '').slice(0, 6); e.target.value = d.length > 3 ? d.slice(0, 3) + ' ' + d.slice(3) : d; });
     $s('setupForm').addEventListener('submit', async ev => {
       ev.preventDefault();
