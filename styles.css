@@ -583,3 +583,22 @@
   .alert-acts .edit { padding-left: 0; }
 
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } .sk, .sync.busy span:first-child::before, body.syncing [data-refresh] svg, .view:not([hidden]) { animation: none; } }
+
+  /* --- subskrypcje (v13) --- */
+  .sub-ask { border: 1px solid #3a5a8a; }
+  .sub-ask-list { list-style: none; margin: 4px 0 0; padding: 0; }
+  .sub-ask-list li { padding: 12px 0; border-top: 1px solid var(--line); }
+  .sub-ask-list li:first-child { border-top: 0; }
+  .sa-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .sa-top .nm { font-weight: 600; }
+  .sa-top .when { font-size: 14px; color: var(--text-2); margin-top: 1px; }
+  .sa-top b { font-size: 17px; white-space: nowrap; }
+  .sa-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+  .sa-acts .edit { padding-left: 4px; }
+  .sub-next { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-2); }
+  .sub-next .edit { padding-left: 6px; }
+  .subs .tag { font-size: 12px; font-weight: 600; color: #7fd98f; border: 1px solid #2f5a3a; border-radius: 99px; padding: 1px 7px; margin-left: 4px; vertical-align: 1px; }
+  .pay .amt-note { font-size: 12px; color: var(--muted); }
+  .pay .when b.warn-txt { color: var(--warning); }
+  .pay-auto { margin-top: 4px; margin-bottom: 4px; }
+  .pay-auto input { accent-color: #2a6fd0; }

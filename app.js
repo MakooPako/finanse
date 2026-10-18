@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '12';
+const CLIENT_VERSION = '13';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -9,6 +9,7 @@ function startApp(initial) {
   const MONTHS_GEN = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
   const zlc = x => (x < 0 ? '−' : '') + Math.abs(x || 0).toLocaleString('pl-PL', { minimumFractionDigits: Number.isInteger(x) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0zł';
   const MONTHS_SHORT = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+  const MONTHS_LOC = ['styczniu', 'lutym', 'marcu', 'kwietniu', 'maju', 'czerwcu', 'lipcu', 'sierpniu', 'wrześniu', 'październiku', 'listopadzie', 'grudniu'];
   const fmtDay = iso => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS_GEN[m - 1]; };
   const fmtShort = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS_SHORT[m - 1]; };
   // „SPOŻYWCZE KOSMETYKI” → „Spożywcze kosmetyki”; krótkie skróty (OC/AC, TBS, NJU, E-ON) zostają.
@@ -155,7 +156,12 @@ function startApp(initial) {
   }
   document.addEventListener('click', e => {
     const t = e.target.closest('[data-tab], [data-goto]');
-    if (t) { setTab(t.dataset.tab || t.dataset.goto); return; }
+    if (t) {
+      setTab(t.dataset.tab || t.dataset.goto);
+      const target = t.dataset.scroll && document.querySelector(`[data-tabview="${TAB}"] #${t.dataset.scroll}`);
+      if (target) target.closest('section').scrollIntoView({ block: 'start' });
+      return;
+    }
     const v = e.target.closest('[data-variant]');
     if (v && v.dataset.variant !== VARIANT) { VARIANT = v.dataset.variant; store('finanse.variant', VARIANT); const y = window.scrollY; render(); window.scrollTo(0, y); }
   });
@@ -294,7 +300,10 @@ function startApp(initial) {
     if (model) applyModel(model); else rerender();
     if (sent.length === 1) {
       const { it, e } = sent[0];
-      if (it.payment) {
+      if (it.payment && it.auto) {
+        const nx = (D.payments || []).find(x => x.name === it.payment);
+        toast(`Zapisane w arkuszu: ${esc(it.payment)} ${zlc(e.amount)}${nx && nx.state === 'scheduled' ? `<small>Następne ${nx.income ? 'wpływ' : 'pobranie'}: ${fmtDay(nx.dueDate)}</small>` : ''}`, e.id);
+      } else if (it.payment) {
         const nx = (D.payments || []).find(x => x.name === it.payment);
         toast(`Zapłacone ${zlc(e.amount)}: ${esc(it.payment)}${e.month ? ' (' + e.month.toLowerCase() + ')' : ''}${e.creditUsed ? `<small>z nadpłaty ${zlc(e.creditUsed)}</small>` : ''}${nx ? `<small>Następny termin: ${fmtDay(nx.dueDate)}</small>` : ''}`, e.id);
       } else if (it.payload.kind === 'expense' && e.date) {
@@ -305,6 +314,8 @@ function startApp(initial) {
     }
     scheduleRetry();
   }
+  // subskrypcja potwierdzona na tym urządzeniu, ale jeszcze w kolejce
+  function subPending(p) { return readOutbox().some(x => !x.error && x.payload.paymentName === p.name && x.payload.period === p.period); }
   function scheduleRetry() {
     clearTimeout(retryTimer);
     if (readOutbox().some(x => !x.error)) retryTimer = setTimeout(flushOutbox, 60000);
@@ -456,6 +467,20 @@ function startApp(initial) {
     V.teraz += `<ul class="alerts" aria-label="Alerty">${alerts.map(a => `<li><span class="ico ${STATE[a.s].cls}" aria-label="${STATE[a.s].label}">${STATE[a.s].ico}</span><div>${a.t}</div></li>`).join('')}</ul>`;
   }
 
+  /* ================= TERAZ: subskrypcje do potwierdzenia ================= */
+  const subs = (D.payments || []).filter(p => p.auto);
+  const asks = subs.filter(p => p.state === 'ask' && !subPending(p));
+  if (asks.length) {
+    V.teraz += `<section class="panel sub-ask" aria-labelledby="h-ask"><div class="panel-head"><div><h2 id="h-ask">${asks.every(p => p.income) ? 'Przyszło?' : 'Pobrało się?'}</h2>
+      <p class="desc">${asks.length === 1 ? 'Ta subskrypcja powinna już' : 'Te subskrypcje powinny już'} być na koncie. Sprawdź w aplikacji banku: „Tak” wpisze kwotę do arkusza.</p></div>
+      ${asks.length > 1 && asks.every(p => p.toPay !== null) ? `<button type="button" class="btn-sm primary-sm" data-sub-all>Wszystkie są</button>` : ''}</div>
+      <ul class="sub-ask-list">${asks.map(p => `<li>
+        <div class="sa-top"><div><div class="nm">${esc(p.name)}</div><div class="when">${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)}${p.daysLeft < -1 ? `, ${-p.daysLeft} dni temu` : p.daysLeft === -1 ? ', wczoraj' : ', dziś'}</div></div>
+          <b class="num">${p.toPay !== null ? zlc(p.toPay) : '?'}</b></div>
+        <div class="sa-acts"><button type="button" class="pay-btn" data-sub-yes="${p.row}">Tak${p.toPay !== null ? ', ' + zlc(p.toPay) : ''}</button><button type="button" class="pay-btn ghost" data-sub-other="${p.row}">Inna kwota</button>
+          <button type="button" class="pay-btn ghost" data-sub-later="${p.row}">Jeszcze nie</button><button type="button" class="edit" data-sub-skip="${p.row}">W tym miesiącu nie będzie</button></div></li>`).join('')}</ul></section>`;
+  }
+
   /* ================= TERAZ: płatności ================= */
   const PAY_TXT = { overdue: 'po terminie', urgent: 'pilne', soon: 'wkrótce', ok: 'zaplanowane', paid: 'zapłacone' };
   const payRow = p => {
@@ -473,13 +498,15 @@ function startApp(initial) {
         : `<div class="sub">${sub}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div>${credit}</div>
       <div class="act"><span class="amt">${amount}</span><button type="button" class="pay-btn" data-pay="${p.row}">Zapłać</button></div></li>`}`;
   };
-  const pays = D.payments || [], due = pays.filter(p => p.state !== 'paid'), paid = pays.filter(p => p.state === 'paid');
+  const pays = (D.payments || []).filter(p => !p.auto), due = pays.filter(p => p.state !== 'paid'), paid = pays.filter(p => p.state === 'paid');
+  const nextSub = subs.filter(p => p.state === 'scheduled' && !p.income).sort((a, b) => a.daysLeft - b.daysLeft)[0];
   const dueSum = due.reduce((s, p) => s + (p.toPay || 0), 0);
   let payH = `<section class="panel" aria-labelledby="h-pay"><div class="panel-head"><div><h2 id="h-pay">Do zapłaty</h2>
     <p class="desc">${due.length ? `${due.length} ${due.length === 1 ? 'płatność' : due.length < 5 ? 'płatności' : 'płatności'}, razem około <b class="num">${zlc(Math.round(dueSum))}</b>. Na czerwono 5 dni przed terminem.` : pays.length ? 'Wszystko zapłacone w tym okresie.' : 'Dodaj czynsz, abonamenty i rachunki z terminem zapłaty.'}</p></div>
     <button type="button" class="btn-sm" data-pay-new>+ Dodaj</button></div>`;
   if (due.length) payH += `<ul class="pay-list">${due.map(payRow).join('')}</ul>`;
   if (paid.length) payH += `<details class="paid-more" data-keep="paid"${OPEN_CATS.has('paid') ? ' open' : ''}><summary><span>Zapłacone w tym okresie <small>${paid.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary><ul class="pay-list">${paid.map(payRow).join('')}</ul></details>`;
+  if (nextSub) payH += `<p class="sub-next">Najbliższa subskrypcja: <b>${esc(nextSub.name)}</b> ${dni(nextSub.daysLeft)}${nextSub.toPay !== null ? `, ${zlc(nextSub.toPay)}` : ''}. <button type="button" class="edit" data-goto="plan" data-scroll="h-subs">Wszystkie</button></p>`;
   payH += `</section>`;
 
   /* ================= TERAZ: limity ================= */
@@ -614,6 +641,32 @@ function startApp(initial) {
   if (D.commitments.length) dueH += `<div class="rates">${D.commitments.map(c => `<div><span>${esc(c.name)}, od ${c.from || '?'}${c.to ? ' do ' + c.to : ''}</span><span class="num">${zl(c.amount)}</span></div>`).join('')}</div>`;
   dueH += `</section>`;
   V.plan += `<div class="cols">${fcH}${dueH}</div>`;
+
+  /* ================= PLAN: subskrypcje ================= */
+  {
+    const out = subs.filter(p => !p.income), inc = subs.filter(p => p.income);
+    const perM = out.reduce((s, p) => s + (p.perMonth || 0), 0), perY = out.reduce((s, p) => s + (p.perYear || 0), 0);
+    const incM = inc.reduce((s, p) => s + (p.perMonth || 0), 0);
+    const EV = { 1: 'co miesiąc', 2: 'co 2 miesiące', 3: 'co kwartał', 6: 'co pół roku', 12: 'co rok' };
+    const row = p => {
+      const pend = subPending(p);
+      const when = p.state === 'ask' && !pend ? `<b class="warn-txt">czeka na odpowiedź</b> (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+        : p.state === 'ask' ? 'zapisuję w arkuszu…'
+        : p.state === 'snoozed' ? `zapytam ponownie ${fmtDay(p.snoozedUntil)} (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+        : `następne ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
+      const last = p.last && p.state === 'scheduled' ? (p.last.answer === 'skip' ? `w ${MONTHS_LOC[+p.last.period.slice(5) - 1]} nie było` : `${p.last.month.toLowerCase()}: ${p.last.amount !== null ? zlc(p.last.amount) : '✓'}`) : '';
+      return `<li class="pay st-${p.state === 'ask' && !pend ? 'soon' : p.state === 'scheduled' ? 'paid' : 'ok'}"><span class="stripe" aria-hidden="true"></span>
+        <div><div class="nm">${esc(p.name)}${p.income ? ' <span class="tag">wpływ</span>' : ''}</div><div class="when">${when}</div>
+        <div class="sub">${EV[p.every] || 'co ' + p.every + ' mies.'}${p.every === 12 ? ', ' + fmtDay(p.dueDate) : `, ${p.day}. dnia`}${last ? ' · ' + last : ''}${!p.income && p.perYear !== null && p.every < 12 ? ` · ${zlc(Math.round(p.perYear))} rocznie` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
+        <div class="act"><span class="amt">${p.toPay !== null ? (p.income ? '+' : '') + zlc(p.toPay) : '?'}</span>${p.amount === null && p.toPay !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
+    };
+    const list = subs.slice().sort((a, b) => (a.state === 'scheduled') - (b.state === 'scheduled') || a.daysLeft - b.daysLeft);
+    V.plan += `<section class="panel subs" aria-labelledby="h-subs"><div class="panel-head"><div><h2 id="h-subs">Subskrypcje</h2>
+      <p class="desc">${out.length ? `Pobierają się same z konta: około <b class="num">${zlc(Math.round(perM))}</b> miesięcznie, <b class="num">${zlc(Math.round(perY))}</b> rocznie.${incM ? ` Wraca ${zlc(Math.round(incM))} miesięcznie (${inc.map(p => esc(p.name)).join(', ')}).` : ''} W dniu pobrania zapytam, czy zeszło z konta.`
+        : 'Netflix, Spotify i inne opłaty, które bank pobiera sam. W dniu pobrania aplikacja zapyta, czy zeszło z konta, i wpisze kwotę do arkusza.'}</p></div>
+      <button type="button" class="btn-sm" data-sub-new>+ Dodaj</button></div>
+      ${list.length ? `<ul class="pay-list">${list.map(row).join('')}</ul>` : ''}</section>`;
+  }
 
   /* ================= PLAN: drugi próg podatkowy ================= */
   const T = D.tax;
@@ -1166,10 +1219,11 @@ function startApp(initial) {
     const cid = newCid();
     const payload = { key: key, amount: amount, date: dateEl.value, desc: descEl.value, unpaid: kind === 'expense' && !pay && unpaidEl.checked, kind: kind, clientId: cid };
     if (pay) { payload.paymentRow = pay.row; payload.paymentName = pay.name; payload.period = pay.period; }
-    const list = readOutbox(); list.push({ cid, payload, label: pay ? pay.name : name, payment: pay ? pay.name : '', at: Date.now() }); writeOutbox(list);
+    if (pay && pay.auto && $('newPrice').checked && !$('newPriceRow').hidden) payload.newPrice = true;
+    const list = readOutbox(); list.push({ cid, payload, label: pay ? pay.name : name, payment: pay ? pay.name : '', auto: !!(pay && pay.auto), at: Date.now() }); writeOutbox(list);
     const offline = navigator.onLine === false;
     const used = pay && pay.credit > 0 ? Math.min(pay.credit, amount) : 0;
-    toast(`${pay ? 'Zapłacone' : kind === 'income' ? 'Dopisano' : 'Dodano'} ${zlc(Math.round((amount - used) * 100) / 100)}: ${esc(pay ? pay.name : name)}${used ? `<small>faktura ${zlc(amount)}, z nadpłaty ${zlc(used)}</small>` : ''}<small>${offline ? 'Brak internetu: zapiszę w arkuszu, gdy wróci połączenie.' : 'Zapisuję w arkuszu…'}</small>`, 'q:' + cid);
+    toast(`${pay && pay.auto ? 'Zapisuję' : pay ? 'Zapłacone' : kind === 'income' ? 'Dopisano' : 'Dodano'} ${zlc(Math.round((amount - used) * 100) / 100)}: ${esc(pay ? pay.name : name)}${used ? `<small>faktura ${zlc(amount)}, z nadpłaty ${zlc(used)}</small>` : ''}<small>${offline ? 'Brak internetu: zapiszę w arkuszu, gdy wróci połączenie.' : 'Zapisuję w arkuszu…'}</small>`, 'q:' + cid);
     amountEl.value = ''; descEl.value = ''; unpaidEl.checked = false;
     if (pay) { hideSheet(); setPayMode(null); F.key = ''; }
     else if (kind === 'expense') { F.key = ''; F.other = false; }
@@ -1495,14 +1549,31 @@ function startApp(initial) {
     $('expensePick').hidden = !!p || F.kind !== 'expense';
     $('incomePick').hidden = !!p || F.kind !== 'income';
     $('unpaid').closest('.check').hidden = !!p || F.kind === 'income';
+    $('newPriceRow').hidden = !(p && p.auto && p.amount !== null);
+    $('newPrice').checked = false;
   }
   function openPay(row) {
     const p = (D.payments || []).find(x => x.row === row);
     if (!p) return;
     setEditMode(null); saveEl.hidden = false;
-    F.kind = 'expense'; F.key = p.key; F.other = false;
+    F.kind = p.income ? 'income' : 'expense'; F.key = p.key; F.other = false;
     buildPickers(); renderRecent();
     setPayMode(p);
+    if (p.auto) {
+      const today = iso(new Date());
+      $('sheetTitle').textContent = (p.income ? 'Przyszło: ' : 'Pobrało się: ') + p.name;
+      $('payCtx').innerHTML = `${p.income ? 'Wpływ' : 'Pobranie'} za <b>${esc(p.periodMonth.toLowerCase() + ' ' + p.periodYear)}</b> (${fmtDay(p.dueDate)}). Kwota trafi do: ${esc(p.block)}, ${esc(pretty(p.col))}${p.income ? ' (z minusem)' : ''}.` +
+        (p.amount !== null ? `<br>Zwykle <b class="num">${zlc(p.amount)}</b>. Jeśli cena się zmieniła na stałe, zaznacz to niżej.` : '');
+      amountEl.value = p.toPay !== null ? (Number.isInteger(p.toPay) ? String(p.toPay) : p.toPay.toFixed(2)).replace('.', ',') : '';
+      descEl.value = p.name;
+      unpaidEl.checked = false;
+      setDate(p.dueDate < today ? p.dueDate : today);
+      dateEl.max = today;
+      errEl.textContent = '';
+      showSheet(sheet);
+      update();
+      return;
+    }
     $('sheetTitle').textContent = 'Zapłać: ' + p.name;
     const per = p.periodMonth.toLowerCase() + ' ' + p.periodYear;
     $('payCtx').innerHTML = `Płatność za <b>${esc(per)}</b>${p.invoiceDate ? `, faktura ${fmtDay(p.invoiceDate)}` : ''}, termin <b>${fmtDay(p.dueDate)}</b>. Kwota trafi do: ${esc(p.block)}, ${esc(pretty(p.col))}.` +
@@ -1518,9 +1589,55 @@ function startApp(initial) {
   }
   document.addEventListener('click', e => { const b = e.target.closest('[data-pay]'); if (b) openPay(+b.dataset.pay); });
 
+  /* ================= subskrypcje: „Pobrało się?” ================= */
+  function confirmSub(p) {
+    const cid = newCid(), today = iso(new Date());
+    const payload = { key: p.key, amount: p.toPay, date: p.dueDate < today ? p.dueDate : today, desc: p.name, unpaid: false, kind: p.income ? 'income' : 'expense',
+      clientId: cid, paymentRow: p.row, paymentName: p.name, period: p.period };
+    const list = readOutbox(); list.push({ cid, payload, label: p.name, payment: p.name, auto: true, at: Date.now() }); writeOutbox(list);
+    return cid;
+  }
+  async function answerSub(p, answer, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      const r = await call('subAnswer', { row: p.row, name: p.name, period: p.period, answer });
+      if (!r.ok) { toast(esc(r.error)); return; }
+      applyModel(r.model);
+      toast(answer === 'later' ? `${esc(p.name)}: zapytam jutro.` : `${esc(p.name)}: w ${MONTHS_LOC[+p.period.slice(5) - 1]} bez ${p.income ? 'wpływu' : 'pobrania'}. Następne ${p.income ? 'zapytanie' : 'pobranie'} w kolejnym okresie.`);
+    } catch (err) { toast(navigator.onLine === false ? 'Brak internetu. Odpowiedz, gdy wróci połączenie.' : 'Nie udało się zapisać: ' + esc(err.message || err)); }
+    finally { if (btn) btn.disabled = false; }
+  }
+  document.addEventListener('click', e => {
+    const subOf = el => (D.payments || []).find(x => x.auto && x.row === +el);
+    let b;
+    if ((b = e.target.closest('[data-sub-yes]'))) {
+      const p = subOf(b.dataset.subYes); if (!p) return;
+      if (p.toPay === null) { openPay(p.row); return; }
+      const cid = confirmSub(p);
+      toast(`${esc(p.name)}: ${p.income ? '+' : ''}${zlc(p.toPay)}<small>${navigator.onLine === false ? 'Brak internetu: zapiszę w arkuszu, gdy wróci połączenie.' : 'Zapisuję w arkuszu…'}</small>`, 'q:' + cid);
+      rerender(); flushOutbox();
+    } else if ((b = e.target.closest('[data-sub-all]'))) {
+      const asks = (D.payments || []).filter(p => p.auto && p.state === 'ask' && !subPending(p) && p.toPay !== null);
+      asks.forEach(confirmSub);
+      toast(`Zapisuję ${asks.length} ${asks.length < 5 ? 'pozycje' : 'pozycji'}: ${asks.map(p => esc(p.name)).join(', ')}.`);
+      rerender(); flushOutbox();
+    } else if ((b = e.target.closest('[data-sub-other]'))) {
+      const p = subOf(b.dataset.subOther); if (p) openPay(p.row);
+    } else if ((b = e.target.closest('[data-sub-later]'))) {
+      const p = subOf(b.dataset.subLater); if (p) answerSub(p, 'later', b);
+    } else if ((b = e.target.closest('[data-sub-skip]'))) {
+      const p = subOf(b.dataset.subSkip); if (p) answerSub(p, 'skip', b);
+    } else if (e.target.closest('[data-sub-new]')) openPayEdit(null, true);
+  });
+
   /* ================= edytor płatności ================= */
-  const PE = { row: null, originalName: '', every: 1, busy: false };
+  const PE = { row: null, originalName: '', every: 1, busy: false, auto: false };
   const EVERY = [[1, 'co miesiąc'], [2, 'co 2 mies.'], [3, 'co kwartał'], [6, 'co pół roku'], [12, 'co rok']];
+  // bloki z kolumnami (także Abonamenty, które nie są osobnym blokiem wydatków)
+  function payBlocks() {
+    const seen = new Set();
+    return (D.categories || []).filter(c => c.kind === 'expense' && !seen.has(c.blockId) && seen.add(c.blockId)).map(c => ({ id: c.blockId, name: c.block }));
+  }
   function payCols() {
     const id = $('payBlock').value;
     const cats = (D.categories || []).filter(c => c.kind === 'expense' && c.blockId === id);
@@ -1530,21 +1647,28 @@ function startApp(initial) {
   }
   function renderPayForm() {
     $('payEvery').innerHTML = EVERY.map(([v, t]) => `<button type="button" data-every="${v}" aria-pressed="${PE.every === v}">${t}</button>`).join('');
-    $('payFromRow').hidden = PE.every === 1;
-    const ok = $('payName').value.trim() && $('payBlock').value && $('payCol').value && +$('payDay').value >= 1 && +$('payDay').value <= 31 && (PE.every === 1 || $('payFrom').value);
+    $('payFromRow').hidden = PE.every === 1 || PE.auto;
+    $('payAuto').checked = PE.auto;
+    $('payDayRow').hidden = PE.auto; $('payNextRow').hidden = !PE.auto;
+    $('payExtraRow').hidden = PE.auto; $('payInvoiceHint').hidden = PE.auto;
+    const kind = PE.auto ? 'subskrypcję' : 'płatność';
+    $('payTitle').textContent = PE.row ? 'Edytuj ' + kind : PE.auto ? 'Nowa subskrypcja' : 'Nowa płatność';
+    $('payNextHint').textContent = PE.auto ? (PE.every === 1 ? 'Kolejne pobrania tego samego dnia każdego miesiąca.' : PE.every === 12 ? 'Kolejne pobrania co rok tego samego dnia.' : `Kolejne pobrania co ${PE.every} mies.`) : '';
+    const ok = $('payName').value.trim() && $('payBlock').value && $('payCol').value && (PE.auto ? !!$('payNext').value : +$('payDay').value >= 1 && +$('payDay').value <= 31 && (PE.every === 1 || $('payFrom').value));
     const dd = +$('payDay').value, inv = +$('payInvoice').value;
     $('payInvoiceHint').textContent = inv >= 1 && inv <= 31 && dd >= 1
       ? (inv > dd ? `Faktura ${inv}. dnia miesiąca, termin ${dd}. następnego. Kwotę wpiszę do miesiąca faktury.` : `Faktura ${inv}., termin ${dd}. tego samego miesiąca.`)
       : 'Jeśli rachunek przychodzi w jednym miesiącu, a termin jest w następnym, wpisz dzień faktury.';
     $('paySave').disabled = PE.busy || !ok;
-    $('paySave').textContent = PE.busy ? 'Zapisuję…' : (PE.row ? 'Zapisz zmiany' : 'Dodaj płatność');
+    $('paySave').textContent = PE.busy ? 'Zapisuję…' : (PE.row ? 'Zapisz zmiany' : 'Dodaj ' + kind);
+    if (!$('payDelete').dataset.armed) $('payDelete').textContent = 'Usuń ' + kind;
   }
-  function openPayEdit(row) {
+  function openPayEdit(row, auto) {
     const p = row ? (D.payments || []).find(x => x.row === row) : null;
-    PE.row = p ? p.row : null; PE.originalName = p ? p.name : ''; PE.every = p ? p.every : 1; PE.busy = false;
-    $('payTitle').textContent = p ? 'Edytuj płatność' : 'Nowa płatność';
-    $('payBlock').innerHTML = '<option value="">Wybierz…</option>' + D.blocks.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
-    $('payBlock').value = p ? p.blockId : '';
+    PE.row = p ? p.row : null; PE.originalName = p ? p.name : ''; PE.every = p ? p.every : 1; PE.busy = false; PE.auto = p ? !!p.auto : !!auto;
+    $('payBlock').innerHTML = '<option value="">Wybierz…</option>' + payBlocks().map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('');
+    $('payBlock').value = p ? p.blockId : (PE.auto && payBlocks().some(b => b.id === 'streaming') ? 'streaming' : '');
+    $('payNext').value = p && p.auto ? p.dueDate : '';
     payCols();
     $('payCol').value = p ? p.key.split('::')[1] : '';
     $('payName').value = p ? p.name : '';
@@ -1553,7 +1677,7 @@ function startApp(initial) {
     $('payCredit').value = p && p.credit ? String(p.credit).replace('.', ',') : '';
     $('payInvoice').value = p && p.invoiceDay ? p.invoiceDay : '';
     $('payFrom').value = p && p.fromYm ? p.fromYm : '';
-    $('payDelete').hidden = !p; delete $('payDelete').dataset.armed; $('payDelete').textContent = 'Usuń płatność';
+    $('payDelete').hidden = !p; delete $('payDelete').dataset.armed;
     $('payErr').textContent = '';
     renderPayForm();
     showSheet($('paySheet'));
@@ -1570,18 +1694,31 @@ function startApp(initial) {
     }
     renderPayForm();
   });
-  ['payName', 'payDay', 'payFrom', 'payAmount', 'payCredit', 'payInvoice'].forEach(id => $(id).addEventListener('input', renderPayForm));
+  ['payName', 'payDay', 'payFrom', 'payAmount', 'payCredit', 'payInvoice', 'payNext'].forEach(id => $(id).addEventListener('input', renderPayForm));
+  $('payAuto').addEventListener('change', () => {
+    PE.auto = $('payAuto').checked;
+    if (PE.auto && !$('payNext').value && +$('payDay').value >= 1) {   // z dnia płatności podpowiedz najbliższą datę
+      const t = new Date(), d = +$('payDay').value;
+      const n = new Date(t.getFullYear(), t.getMonth(), d); if (n < new Date(t.getFullYear(), t.getMonth(), t.getDate())) n.setMonth(n.getMonth() + 1);
+      $('payNext').value = iso(n);
+    }
+    renderPayForm();
+  });
   $('payEvery').addEventListener('click', e => { const b = e.target.closest('[data-every]'); if (b) { PE.every = +b.dataset.every; renderPayForm(); } });
   $('paySave').addEventListener('click', async () => {
     PE.busy = true; $('payErr').textContent = ''; renderPayForm();
     const amt = $('payAmount').value.trim(), cr = $('payCredit').value.trim();
     try {
-      const r = await call('savePayment', { row: PE.row, originalName: PE.originalName, name: $('payName').value, blockId: $('payBlock').value, col: $('payCol').value,
-        day: +$('payDay').value, every: PE.every, from: $('payFrom').value, amount: amt ? parseAmount(amt) : '', credit: cr ? parseAmount(cr) : '',
-        invoiceDay: $('payInvoice').value.trim() ? +$('payInvoice').value : '' });
+      const nx = $('payNext').value;
+      const r = await call('savePayment', PE.auto
+        ? { row: PE.row, originalName: PE.originalName, name: $('payName').value, blockId: $('payBlock').value, col: $('payCol').value, auto: true,
+          day: +nx.slice(8, 10), every: PE.every, from: nx.slice(0, 7), amount: amt ? parseAmount(amt) : '', credit: '', invoiceDay: '' }
+        : { row: PE.row, originalName: PE.originalName, name: $('payName').value, blockId: $('payBlock').value, col: $('payCol').value,
+          day: +$('payDay').value, every: PE.every, from: PE.every > 1 ? $('payFrom').value : '', amount: amt ? parseAmount(amt) : '', credit: cr ? parseAmount(cr) : '',
+          invoiceDay: $('payInvoice').value.trim() ? +$('payInvoice').value : '' });
       if (!r.ok) { $('payErr').textContent = r.error; return; }
       applyModel(r.model); hideSheet();
-      toast(PE.row ? 'Zapisano zmiany płatności.' : 'Dodano płatność „' + esc(r.payment.name) + '”.');
+      toast(PE.row ? 'Zapisano zmiany.' : (PE.auto ? 'Dodano subskrypcję „' : 'Dodano płatność „') + esc(r.payment.name) + '”.');
     } catch (err) { $('payErr').textContent = 'Nie udało się zapisać: ' + (err.message || err); }
     finally { PE.busy = false; renderPayForm(); }
   });
@@ -1592,7 +1729,7 @@ function startApp(initial) {
     try {
       const r = await call('deletePayment', { row: PE.row, name: PE.originalName });
       if (!r.ok) { $('payErr').textContent = r.error; return; }
-      applyModel(r.model); hideSheet(); toast('Usunięto płatność „' + esc(PE.originalName) + '”.');
+      applyModel(r.model); hideSheet(); toast('Usunięto „' + esc(PE.originalName) + '”.');
     } catch (err) { $('payErr').textContent = 'Nie udało się usunąć: ' + (err.message || err); }
     finally { b.disabled = false; }
   });

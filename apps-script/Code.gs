@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '12',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '13',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -84,7 +84,7 @@ function doPost(e) {
       register: function (arg) { return JSON.stringify(registerDevice_(arg, who.device ? 'kod' : 'klucz')); },
       renameDevice: function (arg) { return withDevices_(who, renameDevice_(arg)); },
       confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
-      editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders,
+      editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders, subAnswer: subAnswer,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -340,7 +340,8 @@ function getDashboardData() {
     cur: cur,
     loadPrev: function () { return readYearSheet_(ss, settings.sheetPattern, year - 1); },
     settings: settings,
-    deadlines: deadlines
+    deadlines: deadlines,
+    subAnswers: readPrefs_('SUB_ANSWERS', {})
   });
   model.sheetUrl = ss.getUrl();
   model.version = CFG.VERSION;
@@ -572,7 +573,8 @@ function parseSettings_(v) {
         row: r + 1, name: name, block: String(v[r][1] || '').trim(), col: String(v[r][2] || '').trim(),
         day: Math.min(31, Math.max(1, Math.round(toNum_(v[r][3]) || 1))), every: Math.max(1, Math.round(toNum_(v[r][4]) || 1)),
         from: parseYm_(v[r][5]), amount: toNum_(v[r][6]), credit: toNum_(v[r][7]) || 0,
-        invoiceDay: (function (d) { return d >= 1 && d <= 31 ? Math.round(d) : null; })(toNum_(v[r][8]))   // dzień wystawienia faktury (opcjonalnie)
+        invoiceDay: (function (d) { return d >= 1 && d <= 31 ? Math.round(d) : null; })(toNum_(v[r][8])),   // dzień wystawienia faktury (opcjonalnie)
+        auto: /^(TAK|T|YES|1|TRUE|PRAWDA)$/i.test(String(v[r][10] === undefined || v[r][10] === null ? '' : v[r][10]).trim())   // „Pobiera się samo” (subskrypcja)
       });
     } else if (section === 'inflows') {
       s.inflows.push({ label: name, block: String(v[r][1] || '').trim(), col: String(v[r][2] || '').trim(),
@@ -900,13 +902,77 @@ function buildModel_(ctx) {
   };
   const dueUTC = function (ymi, day) { const y = Math.floor(ymi / 12), m = ymi % 12; return Date.UTC(y, m, Math.min(day, new Date(y, m + 1, 0).getDate())); };
   const isoOf = function (t) { const d = new Date(t); return d.getUTCFullYear() + '-' + ('0' + (d.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + d.getUTCDate()).slice(-2); };
-  const payments = settings.payments.map(function (p) {
+  // Wspólne dla wszystkich płatności: kolumna w arkuszu i miesiące terminów (potrzebne też do wykrycia kilku płatności w jednej komórce).
+  const payMeta = settings.payments.map(function (p) {
     const blk = findBlockByLabel_(B, p.block);
     const ci = blk ? colIndex_(blk, p.col) : -1;
-    if (ci < 0) { warnings.push('Płatność „' + p.name + '”: nie znalazłem kolumny „' + p.col + '” w bloku „' + p.block + '”.'); return null; }
-    const key = blk.cols[ci].key, f = p.every;
+    if (ci < 0) return null;
+    const f = p.every;
     const anchor = p.from !== null ? p.from : (f === 1 ? todayYmi - 24 : todayYmi);   // co miesiąc: każdy miesiąc jest terminem
-    const isDue = function (ymi) { return ymi >= anchor && ((ymi - anchor) % f + f) % f === 0; };
+    return { p: p, blk: blk, ci: ci, cellKey: blk.id + '::' + blk.cols[ci].key, isDue: function (ymi) { return ymi >= anchor && ((ymi - anchor) % f + f) % f === 0; } };
+  });
+  const colLetter = function (n) { let s = ''; for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };
+  // adres komórki (jak w kolumnie „Komórka” dziennika) dla danego miesiąca
+  const cellAddr = function (ymi, blockId, key) {
+    const bl = yearBlocks(Math.floor(ymi / 12)), blk = bl && bl[blockId];
+    const i = blk ? colIndex_(blk, key) : -1;
+    if (i < 0) return null;
+    return sheetName_(settings.sheetPattern, Math.floor(ymi / 12)) + '!' + colLetter(blk.cols[i].c + 1) + (blk.hr + 2 + ymi % 12);
+  };
+  const answers = ctx.subAnswers || {};
+  const todayIso = isoOf(t0);
+  const ymStr = function (ymi) { return Math.floor(ymi / 12) + '-' + ('0' + (ymi % 12 + 1)).slice(-2); };
+
+  /* Subskrypcja (pobiera się sama): po dniu pobrania aplikacja pyta „Pobrało się?”.
+     Odpowiedź „tak” to zwykły wpis powiązany z płatnością; „jeszcze nie” i „nie w tym miesiącu” są w Script Properties (SUB_ANSWERS). */
+  const autoPayment = function (m) {
+    const p = m.p, blk = m.blk, key = blk.cols[m.ci].key, f = p.every;
+    const income = settings.inflows.some(function (q) { const b = findBlockByLabel_(B, q.block); return b && b.id === blk.id && norm_(q.col) === key; });
+    const chargeOf = function (ymi) { return dueUTC(ymi, p.day); };
+    const shared = function (ymi) {
+      return payMeta.some(function (o) { return o && o !== m && o.cellKey === m.cellKey && o.isDue(ymi); });
+    };
+    const answerOf = function (ymi) {
+      const addr = cellAddr(ymi, blk.id, key);
+      const linked = (ctx.entries || []).filter(function (e) { return !e.undone && e.payment === p.name && e.cell === addr; })[0];
+      if (linked) return { a: 'paid', amount: linked.amount };
+      const ans = answers[p.name + '|' + ymStr(ymi)];
+      if (ans && ans.a === 'skip') return { a: 'skip' };
+      const v = cellOf(ymi, blk.id, key);
+      if (v !== null && !shared(ymi)) return { a: 'paid', amount: v };   // wpisane ręcznie w arkuszu
+      if (ans && ans.a === 'later' && ans.until > todayIso) return { a: 'later', until: ans.until };
+      return null;
+    };
+    let last = null;                                         // ostatnie pobranie, które już nastąpiło
+    for (let x = todayYmi; x >= todayYmi - f - 1; x--) if (m.isDue(x) && chargeOf(x) <= t0) { last = x; break; }
+    const lastAns = last === null ? null : answerOf(last);
+    let state, period;
+    if (last !== null && (!lastAns || lastAns.a === 'later')) { period = last; state = lastAns ? 'snoozed' : 'ask'; }
+    else { period = last === null ? todayYmi : last + 1; while (!m.isDue(period) || chargeOf(period) <= t0) period++; state = 'scheduled'; }
+    let estimate = p.amount;
+    if (estimate === null) {
+      for (let x = period - f, k = 0; k < 12 && estimate === null; x -= f, k++) { const a = x === last && lastAns && lastAns.a === 'paid' ? lastAns.amount : (shared(x) ? null : cellOf(x, blk.id, key)); if (a !== null && a !== undefined && Math.abs(a) > 0) estimate = Math.abs(a); }
+    }
+    const daysLeft = Math.round((chargeOf(period) - t0) / 864e5);
+    return {
+      row: p.row, name: p.name, key: blk.id + '::' + key, blockId: blk.id, block: blk.name, col: blk.cols[m.ci].name,
+      auto: true, income: income, day: p.day, every: f, from: p.from === null ? null : ymLabel_(p.from), fromYm: p.from === null ? null : ymStr(p.from),
+      amount: p.amount, credit: 0, estimate: estimate === null ? null : r2_(estimate), toPay: estimate === null ? null : r2_(estimate),
+      perMonth: estimate === null ? null : r2_(estimate / f), perYear: estimate === null ? null : r2_(estimate * 12 / f),
+      period: ymStr(period), periodMonth: CFG.MONTH_NAME[period % 12], periodYear: Math.floor(period / 12),
+      dueDate: isoOf(chargeOf(period)), daysLeft: daysLeft, state: state, snoozedUntil: lastAns && lastAns.a === 'later' ? lastAns.until : null,
+      last: last === null || !lastAns ? null : { period: ymStr(last), month: CFG.MONTH_NAME[last % 12], answer: lastAns.a, amount: lastAns.amount === undefined ? null : r2_(Math.abs(lastAns.amount)) },
+      invoiceDay: null, invoiceDate: null, waiting: false, paid: null
+    };
+  };
+
+  const payments = payMeta.map(function (m, i) {
+    const p = settings.payments[i];
+    if (!m) { warnings.push('Płatność „' + p.name + '”: nie znalazłem kolumny „' + p.col + '” w bloku „' + p.block + '”.'); return null; }
+    if (p.auto) return autoPayment(m);
+    const blk = m.blk, ci = m.ci;
+    const key = blk.cols[ci].key, f = p.every;
+    const isDue = m.isDue;
     // Okres = miesiąc komórki w arkuszu. Bez dnia faktury termin jest w tym samym miesiącu.
     // Z dniem faktury późniejszym niż dzień płatności (np. faktura 26., termin 10.) komórka to miesiąc faktury
     // (wtedy użytkownik płaci), a termin wypada w następnym miesiącu.
@@ -950,7 +1016,7 @@ function buildModel_(ctx) {
       paid: currentPaid ? { month: CFG.MONTH_NAME[lastPaid.ymi % 12], amount: r2_(lastPaid.v) } : null
     };
   }).filter(Boolean).sort(function (a, b) {
-    const ord = { overdue: 0, urgent: 1, soon: 2, ok: 3, paid: 4 };
+    const ord = { ask: 0, overdue: 0, urgent: 1, snoozed: 1, soon: 2, ok: 3, scheduled: 3, paid: 4 };
     return ord[a.state] - ord[b.state] || a.daysLeft - b.daysLeft;
   });
 
@@ -1189,7 +1255,7 @@ function editEntry(payload) {
     if (toNum_(old.row[12])) throw new Error('Płatności z nadpłatą nie da się edytować. Cofnij ją i zapłać ponownie.');
     const fresh = addEntry_(ss, {
       key: p.key, amount: p.amount, date: p.date, desc: p.desc, unpaid: p.unpaid, kind: old.row[3] === 'wpływ' ? 'income' : 'expense',
-      period: p.period || null
+      period: p.period || null, keepPayment: String(old.row[13] || '')
     });
     try {
       undoEntry_(ss, p.id, 'zmieniony → ' + fresh.id);
@@ -1248,8 +1314,10 @@ function savePayment_(ss, p) {
   if (!(day >= 1 && day <= 31)) throw new Error('Dzień płatności musi być od 1 do 31.');
   const every = Math.round(Number(p.every) || 1);
   if ([1, 2, 3, 6, 12].indexOf(every) < 0) throw new Error('Wybierz, co ile miesięcy jest płatność.');
-  const from = every > 1 ? parseYm_(p.from) : null;
-  if (every > 1 && from === null) throw new Error('Podaj miesiąc najbliższej płatności.');
+  const auto = !!p.auto;
+  // co miesiąc „Pierwszy termin” jest opcjonalny; subskrypcja dodana dziś nie pyta o wcześniejsze miesiące
+  const from = every > 1 || auto || p.from ? parseYm_(p.from) : null;
+  if ((every > 1 || auto) && from === null) throw new Error(auto ? 'Podaj datę najbliższego pobrania.' : 'Podaj miesiąc najbliższej płatności.');
   const amount = p.amount === '' || p.amount === null || p.amount === undefined ? '' : Math.round(Number(p.amount) * 100) / 100;
   const credit = p.credit === '' || p.credit === null || p.credit === undefined ? '' : Math.round(Number(p.credit) * 100) / 100;
   if (amount !== '' && !(amount > 0)) throw new Error('Kwota musi być większa od zera albo pusta.');
@@ -1259,6 +1327,8 @@ function savePayment_(ss, p) {
   const blk = yearSheet ? parseYearSheet_(yearSheet.getDataRange().getValues(), null).blocks[p.blockId] : null;
   const ci = blk ? colIndex_(blk, p.col) : -1;
   if (ci < 0 || blk.cols[ci].unnamed) throw new Error('Wybierz blok i kolumnę, do której wpisujesz tę płatność.');
+  if (auto && credit !== '' && credit > 0) throw new Error('Subskrypcja nie może mieć nadpłaty.');
+  ensurePayAutoHeader_(sh, settings);
   const fromStr = from === null ? '' : Math.floor(from / 12) + '-' + ('0' + (from % 12 + 1)).slice(-2);
   const inv = p.invoiceDay === '' || p.invoiceDay === null || p.invoiceDay === undefined ? '' : Math.round(Number(p.invoiceDay));
   if (inv !== '' && !(inv >= 1 && inv <= 31)) throw new Error('Dzień faktury musi być od 1 do 31 albo pusty.');
@@ -1268,6 +1338,8 @@ function savePayment_(ss, p) {
     const cur = settings.payments.filter(function (x) { return x.row === p.row; })[0];
     if (!cur || cur.name !== p.originalName) throw new Error('Płatności w arkuszu zmieniły się w międzyczasie. Odśwież stronę i spróbuj ponownie.');
     sh.getRange(p.row, 1, 1, 9).setValues([row]);
+    sh.getRange(p.row, 11).setValue(auto ? 'TAK' : '');
+    if (cur.name !== name) renameSubAnswers_(cur.name, name);
     return { row: p.row, name: name };
   }
   if (settings.payments.some(function (x) { return norm_(x.name) === norm_(name); })) throw new Error('Płatność „' + name + '” już istnieje.');
@@ -1276,7 +1348,48 @@ function savePayment_(ss, p) {
   const last = settings.payments.length ? Math.max.apply(null, settings.payments.map(function (x) { return x.row; })) : header + 1;
   sh.insertRowAfter(last);
   sh.getRange(last + 1, 1, 1, 9).setValues([row]);
+  sh.getRange(last + 1, 11).setValue(auto ? 'TAK' : '');
   return { row: last + 1, name: name };
+}
+
+/** Nagłówek kolumny K w tabeli płatności (dodawany przy pierwszym zapisie w v13). */
+function ensurePayAutoHeader_(sh, settings) {
+  const header = settings.sectionRows.payments;
+  if (!header) return;
+  if (sh.getMaxColumns && sh.getMaxColumns() < 11) sh.insertColumnsAfter(sh.getMaxColumns(), 11 - sh.getMaxColumns());
+  const c = sh.getRange(header + 1, 11);
+  if (isEmpty_(c.getValue())) c.setValue('Pobiera się samo');
+}
+
+function renameSubAnswers_(from, to) {
+  const all = readPrefs_('SUB_ANSWERS', {}), out = {};
+  Object.keys(all).forEach(function (k) { out[k.indexOf(from + '|') === 0 ? to + k.slice(from.length) : k] = all[k]; });
+  PropertiesService.getScriptProperties().setProperty('SUB_ANSWERS', JSON.stringify(out));
+}
+
+/**
+ * Odpowiedź na „Pobrało się?” bez wpisu do arkusza: later = zapytaj jutro, skip = w tym okresie nie było pobrania, clear = cofnij odpowiedź.
+ * „Tak” to zwykły addEntry z paymentRow/paymentName/period.
+ */
+function subAnswer(arg) {
+  return withLock_(function (ss) {
+    const p = arg || {};
+    const settings = parseSettings_(readSheetValues_(ss, CFG.SETTINGS_SHEET));
+    const pay = settings.payments.filter(function (x) { return x.row === p.row && x.name === p.name && x.auto; })[0];
+    if (!pay) throw new Error('Subskrypcje w arkuszu zmieniły się w międzyczasie. Odśwież aplikację.');
+    if (!/^\d{4}-\d{2}$/.test(String(p.period || ''))) throw new Error('Nieprawidłowy okres.');
+    if (['later', 'skip', 'clear'].indexOf(p.answer) < 0) throw new Error('Nieznana odpowiedź.');
+    const all = readPrefs_('SUB_ANSWERS', {});
+    const k = pay.name + '|' + p.period;
+    if (p.answer === 'clear') delete all[k];
+    else if (p.answer === 'skip') all[k] = { a: 'skip', at: dateStr_(new Date()) };
+    else { const t = new Date(); t.setDate(t.getDate() + 1); all[k] = { a: 'later', until: dateStr_(t) }; }
+    // porządek: odpowiedzi starsze niż 14 miesięcy nie są potrzebne
+    const now = new Date(), minYm = (now.getFullYear() * 12 + now.getMonth()) - 14;
+    Object.keys(all).forEach(function (x) { const ym = parseYm_(x.split('|').pop()); if (ym !== null && ym < minYm) delete all[x]; });
+    PropertiesService.getScriptProperties().setProperty('SUB_ANSWERS', JSON.stringify(all));
+    return { answer: p.answer };
+  });
 }
 
 function deletePayment_(ss, p) {
@@ -1521,7 +1634,11 @@ function addEntry_(ss, p) {
   const category = blk.name + ' / ' + blk.cols[ci].name;
   log.appendRow([id, new Date(), date, isIncome ? 'wpływ' : 'wydatek', category, amount, asText_(desc),
     p.unpaid ? 'TAK' : '', sheet.getName() + '!' + a1, asText_(before), asText_(after), 'dodany',
-    creditUsed || '', payment ? asText_(payment.name) : '', delta]);
+    creditUsed || '', payment ? asText_(payment.name) : asText_(String(p.keepPayment || '').slice(0, 60)), delta]);
+  if (payment && payment.auto && p.newPrice && amount > 0) {
+    // „To nowa cena”: zapamiętana w Ustawieniach (kolumna „Kwota”) na kolejne pobrania
+    ss.getSheetByName(CFG.SETTINGS_SHEET).getRange(payment.row, 7).setValue(amount);
+  }
   if (creditUsed) {
     const left = Math.round((payment.credit - creditUsed) * 100) / 100;
     ss.getSheetByName(CFG.SETTINGS_SHEET).getRange(payment.row, 8).setValue(left > 0 ? left : '');
@@ -1722,7 +1839,7 @@ function syncReminders_(force) {
     const nextHour = function () { const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), r.hour, 0, 0); if (t <= now) t.setDate(t.getDate() + 1); return t; };
     const daysBefore = function (list) { return list.filter(function (d, i, a) { return d >= 0 && a.indexOf(d) === i; }).map(function (d) { return Math.min(40320, d * 1440); }); };
     (model.payments || []).forEach(function (p) {
-      if (!p.dueDate) return;
+      if (!p.dueDate || p.auto) return;   // subskrypcje pobierają się same – bez przypomnień „Zapłać”
       const amount = p.toPay !== null && p.toPay !== undefined ? ' – ' + fmtPl_(p.toPay) + ' zł' : '';
       const overdue = p.daysLeft < 0 && p.state !== 'paid';
       if (overdue && p.daysLeft < -30) return;

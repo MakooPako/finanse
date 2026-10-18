@@ -67,6 +67,7 @@
   <div class="amount-hint" id="amountHint">Kilka kwot naraz? Wpisz np. 12,50+30.</div>
   <label class="field"><span>Opis (nieobowiązkowy)</span><input id="desc" maxlength="200" autocomplete="off" placeholder="np. Biedronka, pizza, Orlen"></label>
   <label class="check"><input type="checkbox" id="unpaid"><span>Jeszcze niezapłacone</span></label>
+  <label class="check" id="newPriceRow" hidden><input type="checkbox" id="newPrice"><span>To nowa cena: zapamiętaj ją na kolejne miesiące</span></label>
   <p class="err" id="err" role="alert"></p>
   <p class="edit-note" id="editNote" hidden></p>
   <button class="save" id="save" type="button" disabled>Wybierz kategorię i wpisz kwotę</button>
@@ -94,18 +95,21 @@
 <section class="sheet" id="paySheet" role="dialog" aria-modal="true" aria-labelledby="payTitle" hidden>
   <div class="grab" aria-hidden="true"></div>
   <div class="sheet-head"><h2 id="payTitle">Nowa płatność</h2><button type="button" class="x" data-close aria-label="Zamknij">✕</button></div>
-  <label class="field"><span>Nazwa</span><input id="payName" maxlength="60" autocomplete="off" placeholder="np. Czynsz TBS"></label>
+  <label class="field"><span>Nazwa</span><input id="payName" maxlength="60" autocomplete="off" placeholder="np. Czynsz TBS, Spotify"></label>
+  <label class="check pay-auto"><input type="checkbox" id="payAuto"><span>Pobiera się samo z konta (subskrypcja)</span></label>
   <div class="two-col">
     <label class="field"><span>Blok</span><select id="payBlock"></select></label>
     <label class="field"><span>Kolumna</span><select id="payCol"></select></label>
   </div>
   <div class="two-col">
-    <label class="field"><span>Dzień płatności</span><input id="payDay" class="num-in" type="number" min="1" max="31" inputmode="numeric"></label>
+    <label class="field" id="payDayRow"><span>Dzień płatności</span><input id="payDay" class="num-in" type="number" min="1" max="31" inputmode="numeric"></label>
+    <label class="field" id="payNextRow" hidden><span>Najbliższe pobranie</span><input id="payNext" class="num-in" type="date"></label>
     <label class="field"><span>Kwota (puste = jak ostatnio)</span><input id="payAmount" class="num-in" inputmode="decimal" autocomplete="off"></label>
   </div>
   <div class="field"><span>Jak często</span><div class="chips" id="payEvery" role="group" aria-label="Jak często"></div></div>
+  <p class="hint-avg" id="payNextHint"></p>
   <label class="field" id="payFromRow"><span>Najbliższy termin (miesiąc)</span><input id="payFrom" class="num-in" type="month"></label>
-  <div class="two-col">
+  <div class="two-col" id="payExtraRow">
     <label class="field"><span>Dzień faktury (opcjonalnie)</span><input id="payInvoice" class="num-in" type="number" min="1" max="31" inputmode="numeric" placeholder="np. 26"></label>
     <label class="field"><span>Nadpłata (zł)</span><input id="payCredit" class="num-in" inputmode="decimal" autocomplete="off" placeholder="0"></label>
   </div>
