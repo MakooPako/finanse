@@ -18,13 +18,14 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '11',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '12',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
   DEVICES_SHEET: 'Urządzenia',
   LOG_HEADER: ['ID', 'Dodano', 'Data zakupu', 'Typ', 'Kategoria', 'Kwota', 'Opis',
-    'Niezapłacone', 'Komórka', 'Było', 'Jest', 'Status', 'Z nadpłaty', 'Płatność'],
+    'Niezapłacone', 'Komórka', 'Było', 'Jest', 'Status', 'Z nadpłaty', 'Płatność', 'Zmiana w komórce'],
+  LOG_MAX: 1500,           // tyle ostatnich wpisów (z bieżącego i poprzedniego roku) trafia do aplikacji – do wyszukiwania i edycji
   LOG_SHOW: 40,
   DEFAULT_PATTERN: 'Mako - opłaty miesięczne {ROK}',
   MONTHS: ['STYCZEŃ', 'LUTY', 'MARZEC', 'KWIECIEŃ', 'MAJ', 'CZERWIEC', 'LIPIEC',
@@ -82,6 +83,8 @@ function doPost(e) {
       pairStart: pairStart_,
       register: function (arg) { return JSON.stringify(registerDevice_(arg, who.device ? 'kod' : 'klucz')); },
       renameDevice: function (arg) { return withDevices_(who, renameDevice_(arg)); },
+      confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
+      editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -140,7 +143,7 @@ function sameText_(a, b) {
 
 /* ---------------- urządzenia ---------------- */
 
-const DEV_HEADER = ['ID', 'Nazwa', 'Urządzenie', 'Połączono', 'Ostatnio', 'Sposób', 'Status', 'Usunięto', 'Skrót przepustki'];
+const DEV_HEADER = ['ID', 'Nazwa', 'Urządzenie', 'Połączono', 'Ostatnio', 'Sposób', 'Status', 'Usunięto', 'Skrót przepustki', 'Potwierdzone'];
 
 function devicesSheet_() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -154,6 +157,11 @@ function devicesSheet_() {
       sh.getRange('D:E').setNumberFormat('yyyy-mm-dd hh:mm');
       sh.getRange('H:H').setNumberFormat('yyyy-mm-dd hh:mm');
     } catch (e) { /* formatowanie jest opcjonalne */ }
+  } else if (isEmpty_(sh.getRange(1, 10).getValue())) {
+    // zakładka sprzed v12: dopisz kolumnę „Potwierdzone”; urządzenia połączone wcześniej uznajemy za potwierdzone
+    sh.getRange(1, 10).setValue('Potwierdzone');
+    const n = sh.getLastRow();
+    if (n > 1) sh.getRange(2, 10, n - 1, 1).setValues(Array.apply(null, Array(n - 1)).map(function () { return ['TAK']; }));
   }
   return sh;
 }
@@ -168,7 +176,8 @@ function readDevices_() {
       row: r + 1, id: String(v[r][0]), name: String(v[r][1] || ''), desc: String(v[r][2] || ''),
       created: isDate_(v[r][3]) ? v[r][3] : null, seen: isDate_(v[r][4]) ? v[r][4] : null,
       method: String(v[r][5] || ''), active: !/usuni/i.test(String(v[r][6] || '')),
-      removed: isDate_(v[r][7]) ? v[r][7] : null, hash: String(v[r][8] || '')
+      removed: isDate_(v[r][7]) ? v[r][7] : null, hash: String(v[r][8] || ''),
+      confirmed: /^TAK$/i.test(String(v[r][9] || '').trim())
     });
   }
   return out;
@@ -204,7 +213,9 @@ function registerDevice_(arg, method) {
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
-    devicesSheet_().appendRow([id, name, desc, now, now, method, 'aktywne', '', sha256_(token)]);
+    // kodem łączy się tylko z urządzenia, które już ma dostęp – takie jest od razu potwierdzone; pierwsze urządzenie też
+    const first = !readDevices_().some(function (d) { return d.active; });
+    devicesSheet_().appendRow([id, name, desc, now, now, method, 'aktywne', '', sha256_(token), method === 'kod' || first ? 'TAK' : '']);
   } finally { lock.releaseLock(); }
   logEvent_('connect', name, desc + (method === 'kod' ? ', kodem z innego urządzenia' : ', głównym kluczem'));
   return { ok: true, token: token, id: id };
@@ -217,6 +228,14 @@ function renameDevice_(arg) {
   if (!d) throw new Error('Nie znalazłem tego urządzenia.');
   devicesSheet_().getRange(d.row, 2).setValue(name);
   logEvent_('rename', name, 'wcześniej: ' + d.name);
+  return { ok: true };
+}
+
+function confirmDevice_(arg) {
+  const d = readDevices_().filter(function (x) { return x.id === String(arg && arg.id); })[0];
+  if (!d) throw new Error('Nie znalazłem tego urządzenia.');
+  devicesSheet_().getRange(d.row, 10).setValue('TAK');
+  logEvent_('confirm', d.name, 'potwierdzone jako Twoje');
   return { ok: true };
 }
 
@@ -235,7 +254,7 @@ function devicesInfo_(currentId) {
   const iso = function (d) { return d ? d.toISOString() : null; };
   const limit = Date.now() - 90 * 864e5;
   const list = readDevices_().filter(function (d) { return d.active || (d.removed && d.removed.getTime() > limit); }).map(function (d) {
-    return { id: d.id, name: d.name, desc: d.desc, created: iso(d.created), seen: iso(d.seen), method: d.method, active: d.active, removed: iso(d.removed), current: d.id === currentId };
+    return { id: d.id, name: d.name, desc: d.desc, created: iso(d.created), seen: iso(d.seen), method: d.method, active: d.active, removed: iso(d.removed), current: d.id === currentId, confirmed: d.confirmed };
   });
   return { list: list, events: readEvents_().slice(0, 30), current: currentId };
 }
@@ -325,6 +344,7 @@ function getDashboardData() {
   });
   model.sheetUrl = ss.getUrl();
   model.version = CFG.VERSION;
+  model.prefs = { colors: readPrefs_('UI_COLORS', {}), reminders: remindersInfo_() };
   try {
     const tz = Session.getScriptTimeZone();
     if (tz && tz !== 'Europe/Warsaw') model.warnings.push('Strefa czasowa skryptu to ' + tz + '. Ustaw Europe/Warsaw (Apps Script → Ustawienia projektu), żeby terminy liczyły się co do dnia.');
@@ -1080,8 +1100,65 @@ function buildModel_(ctx) {
  * Zwracają tekst JSON: { ok, error?, entry?, model? }.
  */
 
-function refreshData() {
-  return JSON.stringify(getDashboardData());
+/** Model z pamięci skryptu (szybko); { force: true } liczy od nowa. Pamięć kasują zapisy z aplikacji i każda ręczna edycja arkusza (onEdit). */
+function refreshData(arg) {
+  return cachedModelJson_(!!(arg && arg.force));
+}
+
+/* ---------------- pamięć modelu (CacheService, porcje po 90 tys. znaków) ---------------- */
+function modelCacheKey_() {
+  const d = new Date();
+  return 'model:' + CFG.VERSION + ':' + d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate();
+}
+function cachedModelJson_(force) {
+  const key = modelCacheKey_();
+  if (!force) { const hit = cacheGetBig_(key); if (hit) return hit; }
+  const json = JSON.stringify(getDashboardData());
+  cachePutBig_(key, json, 1800);
+  return json;
+}
+function cachePutBig_(key, text, ttl) {
+  try {
+    const c = CacheService.getScriptCache(), size = 90000, obj = {};
+    const n = Math.ceil(text.length / size);
+    for (let i = 0; i < n; i++) obj[key + ':' + i] = text.slice(i * size, (i + 1) * size);
+    obj[key] = String(n);
+    c.putAll(obj, ttl);
+  } catch (e) { /* bez pamięci – policzymy następnym razem */ }
+}
+function cacheGetBig_(key) {
+  try {
+    const c = CacheService.getScriptCache();
+    const n = Number(c.get(key) || 0);
+    if (!n) return null;
+    const keys = []; for (let i = 0; i < n; i++) keys.push(key + ':' + i);
+    const got = c.getAll(keys);
+    let out = '';
+    for (let i = 0; i < n; i++) { if (got[keys[i]] === undefined || got[keys[i]] === null) return null; out += got[keys[i]]; }
+    return out;
+  } catch (e) { return null; }
+}
+function invalidateModel_() {
+  try { CacheService.getScriptCache().remove(modelCacheKey_()); } catch (e) { /* nic */ }
+}
+/** Prosty wyzwalacz: każda ręczna zmiana w arkuszu kasuje pamięć modelu, więc aplikacja pokaże świeże dane. */
+function onEdit() { invalidateModel_(); }
+
+/* ---------------- ustawienia aplikacji (kolory, przypomnienia) w ustawieniach skryptu ---------------- */
+function readPrefs_(name, dflt) {
+  try { const v = PropertiesService.getScriptProperties().getProperty(name); return v ? JSON.parse(v) : dflt; } catch (e) { return dflt; }
+}
+function writePrefs_(name, value) { PropertiesService.getScriptProperties().setProperty(name, JSON.stringify(value)); invalidateModel_(); }
+
+function saveColors(arg) {
+  const colors = {};
+  const ids = CFG.BLOCKS.filter(function (b) { return b.id; }).map(function (b) { return b.id; }).concat(['other']);
+  const src = (arg && arg.colors) || {};
+  Object.keys(src).forEach(function (k) {
+    if (ids.indexOf(k) >= 0 && /^#[0-9a-f]{6}$/i.test(String(src[k]))) colors[k] = String(src[k]).toLowerCase();
+  });
+  writePrefs_('UI_COLORS', colors);
+  return JSON.stringify({ ok: true, model: JSON.parse(cachedModelJson_(true)) });
 }
 
 function addEntry(payload) {
@@ -1093,8 +1170,34 @@ function addEntry(payload) {
 
 function undoEntry(id) {
   return withLock_(function (ss) {
-    undoEntry_(ss, id);
+    undoEntry_(ss, id, 'cofnięty');
     return {};
+  });
+}
+
+/**
+ * Zmiana wpisu: kwota, opis, kategoria, data, „niezapłacone”. Najpierw zapisuje nową wersję (sprawdza wszystko),
+ * potem usuwa starą kwotę z komórki. Gdy usunięcie się nie uda, cofa nową wersję – arkusz zostaje bez zmian.
+ */
+function editEntry(payload) {
+  return withLock_(function (ss) {
+    const p = payload || {};
+    const log = ss.getSheetByName(CFG.LOG_SHEET);
+    const old = log ? findLogRow_(log, p.id) : null;
+    if (!old) throw new Error('Nie znalazłem tego wpisu w dzienniku.');
+    if (/cofni|zmienion/i.test(String(old.row[11]))) throw new Error('Ten wpis był już cofnięty albo zmieniony. Odśwież aplikację.');
+    if (toNum_(old.row[12])) throw new Error('Płatności z nadpłatą nie da się edytować. Cofnij ją i zapłać ponownie.');
+    const fresh = addEntry_(ss, {
+      key: p.key, amount: p.amount, date: p.date, desc: p.desc, unpaid: p.unpaid, kind: old.row[3] === 'wpływ' ? 'income' : 'expense',
+      period: p.period || null
+    });
+    try {
+      undoEntry_(ss, p.id, 'zmieniony → ' + fresh.id);
+    } catch (e) {
+      undoEntry_(ss, fresh.id, 'cofnięty (nieudana zmiana)');
+      throw e;
+    }
+    return { entry: fresh };
   });
 }
 
@@ -1109,8 +1212,9 @@ function withLock_(fn) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const out = fn(ss);
     SpreadsheetApp.flush();
+    invalidateModel_();
     out.ok = true;
-    out.model = getDashboardData();
+    out.model = JSON.parse(cachedModelJson_(true));
     return JSON.stringify(out);
   } catch (e) {
     return JSON.stringify({ ok: false, error: String(e && e.message || e) });
@@ -1278,8 +1382,8 @@ function ensureLogSheet_(ss) {
   if (!sh) {
     sh = ss.insertSheet(CFG.LOG_SHEET);
   }
-  if (sh.getLastRow() > 0 && isEmpty_(sh.getRange(1, 13).getValue())) {
-    sh.getRange(1, 13, 1, 2).setValues([CFG.LOG_HEADER.slice(12)]);   // starszy dziennik: dopisz nowe nagłówki
+  if (sh.getLastRow() > 0 && isEmpty_(sh.getRange(1, 15).getValue())) {
+    sh.getRange(1, 13, 1, 3).setValues([CFG.LOG_HEADER.slice(12)]);   // starszy dziennik: dopisz nowe nagłówki
   }
   if (sh.getLastRow() === 0) {
     sh.appendRow(CFG.LOG_HEADER);
@@ -1311,13 +1415,25 @@ function parseLog_(v) {
       amount: toNum_(row[5]) || 0,
       desc: String(row[6] || ''),
       unpaid: /^TAK$/i.test(String(row[7] || '').trim()),
-      undone: /cofni/i.test(String(row[11] || ''))
+      undone: /cofni|zmienion/i.test(String(row[11] || '')),
+      edited: /zmienion/i.test(String(row[11] || '')),
+      cell: String(row[8] || ''),
+      credit: toNum_(row[12]) || 0,
+      payment: String(row[13] || '')
     });
   }
-  return out.slice(-CFG.LOG_SHOW).reverse();
+  const minYear = new Date().getFullYear() - 1;
+  return out.filter(function (e) { return !e.date || Number(e.date.slice(0, 4)) >= minYear; }).slice(-CFG.LOG_MAX).reverse();
 }
 
 function addEntry_(ss, p) {
+  // Wpis z kolejki w telefonie może przyjść dwa razy (np. zerwane połączenie po zapisie) – ten sam ID nie zapisze się drugi raz.
+  const clientId = /^[A-Za-z0-9_-]{8,40}$/.test(String(p.clientId || '')) ? 'K' + String(p.clientId) : null;
+  if (clientId) {
+    const lg = ss.getSheetByName(CFG.LOG_SHEET);
+    const dup = lg ? findLogRow_(lg, clientId) : null;
+    if (dup) return { id: clientId, duplicate: true, category: String(dup.row[4]), amount: toNum_(dup.row[5]) || 0, creditUsed: toNum_(dup.row[12]) || 0, kind: String(dup.row[3]), date: dateStr_(parseDate_(dup.row[2]) || new Date()), cell: String(dup.row[8]).split('!').pop(), month: '' };
+  }
   let amount = Math.round(Number(p.amount) * 100) / 100;
   if (!isFinite(amount) || Math.abs(amount) > 1000000) throw new Error('Wpisz poprawną kwotę.');
   const date = parseDate_(p.date);
@@ -1401,11 +1517,11 @@ function addEntry_(ss, p) {
   }
 
   const log = ensureLogSheet_(ss);
-  const id = 'W' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
+  const id = clientId || 'W' + Utilities.getUuid().replace(/-/g, '').slice(0, 10);
   const category = blk.name + ' / ' + blk.cols[ci].name;
   log.appendRow([id, new Date(), date, isIncome ? 'wpływ' : 'wydatek', category, amount, asText_(desc),
     p.unpaid ? 'TAK' : '', sheet.getName() + '!' + a1, asText_(before), asText_(after), 'dodany',
-    creditUsed || '', payment ? asText_(payment.name) : '']);
+    creditUsed || '', payment ? asText_(payment.name) : '', delta]);
   if (creditUsed) {
     const left = Math.round((payment.credit - creditUsed) * 100) / 100;
     ss.getSheetByName(CFG.SETTINGS_SHEET).getRange(payment.row, 8).setValue(left > 0 ? left : '');
@@ -1414,30 +1530,89 @@ function addEntry_(ss, p) {
   return { id: id, category: category, amount: amount, creditUsed: creditUsed, kind: isIncome ? 'wpływ' : 'wydatek', date: dateStr_(date), cell: a1, month: CFG.MONTH_NAME[tMonth] };
 }
 
-function undoEntry_(ss, id) {
+function findLogRow_(log, id) {
+  const v = log.getDataRange().getValues();
+  for (let i = v.length - 1; i >= 1; i--) { if (String(v[i][0]) === String(id)) return { r: i + 1, row: v[i] }; }
+  return null;
+}
+
+/** Ile wpis zmienił w komórce (ze znakiem). Nowsze wpisy mają to w kolumnie O, starsze liczymy z „Było” i „Jest” albo z konfiguracji wpływów. */
+function entryDelta_(ss, row) {
+  const d = toNum_(row[14]);
+  if (d !== null) return d;
+  const amount = toNum_(row[5]) || 0;
+  if (String(row[3]) !== 'wpływ') return amount;
+  const settings = parseSettings_(readSheetValues_(ss, CFG.SETTINGS_SHEET));
+  const label = String(row[4]);
+  const inflow = settings.inflows.filter(function (q) { return norm_(label).indexOf(norm_(q.col)) >= 0; })[0];
+  return amount * (inflow ? inflow.sign : 1);
+}
+
+/**
+ * Usuwa z komórki kwotę jednego wpisu, także gdy później dopisano inne: szuka w formule dokładnie tego składnika
+ * (np. „+12,5”) i go wycina. Gdy komórka nie zawiera tego składnika (ktoś zmienił ją ręcznie), nic nie zmienia i zgłasza błąd.
+ */
+function removeTerm_(ss, cell, delta) {
+  const a1 = cell.getA1Notation();
+  const f = cell.getFormula(), v = cell.getValue();
+  const expected = Math.round(((typeof v === 'number' ? v : 0) - delta) * 100) / 100;
+  if (!f) {
+    if (typeof v === 'number' && Math.abs(v - delta) < 0.005) { cell.clearContent(); return; }
+    throw new Error('Komórka ' + a1 + ' zmieniła się ręcznie i nie zawiera już tej kwoty. Popraw ją w arkuszu.');
+  }
+  const seps = decimalSeps_(ss, f);
+  for (let k = 0; k < seps.length; k++) {
+    const num = numStr_(Math.abs(delta), seps[k]);
+    const body = f.slice(1);
+    const terms = [];
+    const re = /([+-]?)([^+-]+)/g;   // składniki formuły typu =982+12,48-100
+    let m;
+    while ((m = re.exec(body)) !== null) terms.push({ sign: m[1] || '+', val: m[2].trim() });
+    let at = -1;
+    for (let t = terms.length - 1; t >= 0; t--) {
+      if (terms[t].val === num && (terms[t].sign === '-') === (delta < 0)) { at = t; break; }
+    }
+    if (at < 0) continue;
+    terms.splice(at, 1);
+    if (!terms.length) { cell.clearContent(); return; }
+    const nf = '=' + terms.map(function (t, i) { return (i === 0 && t.sign === '+' ? '' : t.sign) + t.val; }).join('');
+    cell.setFormula(nf);
+    SpreadsheetApp.flush();
+    const got = cell.getValue();
+    if (typeof got === 'number' && Math.abs(got - expected) < 0.005) return;
+    cell.setFormula(f);   // nie zgadza się – przywracamy i próbujemy innego separatora
+  }
+  throw new Error('Komórka ' + a1 + ' zmieniła się ręcznie i nie zawiera już tej kwoty. Popraw ją w arkuszu.');
+}
+
+function undoEntry_(ss, id, status) {
   const log = ss.getSheetByName(CFG.LOG_SHEET);
   if (!log) throw new Error('Nie ma zakładki „' + CFG.LOG_SHEET + '”.');
-  const v = log.getDataRange().getValues();
-  let r = -1;
-  for (let i = v.length - 1; i >= 1; i--) { if (String(v[i][0]) === String(id)) { r = i; break; } }
-  if (r < 0) throw new Error('Nie znalazłem tego wpisu w dzienniku.');
-  const row = v[r];
-  if (/cofni/i.test(String(row[11]))) throw new Error('Ten wpis jest już cofnięty.');
+  const found = findLogRow_(log, id);
+  if (!found) throw new Error('Nie znalazłem tego wpisu w dzienniku.');
+  const row = found.row;
+  if (/cofni|zmienion/i.test(String(row[11]))) throw new Error('Ten wpis jest już cofnięty.');
   const ref = String(row[8]);
   const k = ref.lastIndexOf('!');
   const sheet = ss.getSheetByName(ref.slice(0, k));
   if (!sheet) throw new Error('Nie ma już zakładki „' + ref.slice(0, k) + '”.');
   const cell = sheet.getRange(ref.slice(k + 1));
+  const delta = entryDelta_(ss, row);
+
+  // Najprostszy przypadek jak dotąd: komórka wygląda dokładnie tak, jak zaraz po wpisie – wracamy do „Było”.
   const before = row[9], after = row[10];
   const curF = cell.getFormula(), curV = cell.getValue();
   const same = typeof after === 'number'
     ? (!curF && typeof curV === 'number' && Math.abs(curV - after) < 0.005)
     : (!!curF && normF_(curF) === normF_(after));
-  if (!same) throw new Error('Komórka ' + ref.slice(k + 1) + ' zmieniła się od czasu tego wpisu. Popraw ją ręcznie w arkuszu.');
-
-  if (String(before).charAt(0) === '=') cell.setFormula(String(before));
-  else if (isEmpty_(before)) cell.clearContent();
-  else cell.setValue(before);
+  if (delta === 0) { /* płatność w całości z nadpłaty – komórka bez zmian */ }
+  else if (same) {
+    if (String(before).charAt(0) === '=') cell.setFormula(String(before));
+    else if (isEmpty_(before)) cell.clearContent();
+    else cell.setValue(before);
+  } else {
+    removeTerm_(ss, cell, delta);   // później dopisano inne wpisy – wycinamy tylko ten składnik
+  }
 
   if (/^TAK$/i.test(String(row[7] || '').trim())) {
     const text = unpaidNote_(toNum_(row[5]) || 0, String(row[6] || ''));
@@ -1445,13 +1620,144 @@ function undoEntry_(ss, id) {
     const at = lines.lastIndexOf(text);
     if (at >= 0) { lines.splice(at, 1); cell.setNote(lines.join('\n')); }
   }
-  log.getRange(r + 1, 12).setValue('cofnięty');
+  log.getRange(found.r, 12).setValue(status || 'cofnięty');
   const used = toNum_(row[12]);
   if (used && row[13]) {
     const sh = ss.getSheetByName(CFG.SETTINGS_SHEET);
     const pay = parseSettings_(sh.getDataRange().getValues()).payments.filter(function (x) { return x.name === String(row[13]); })[0];
     if (pay) sh.getRange(pay.row, 8).setValue(Math.round((pay.credit + used) * 100) / 100);
   }
+}
+
+/* ============================ PRZYPOMNIENIA W KALENDARZU GOOGLE ============================ */
+/*
+ * Płatności i terminy roczne trafiają jako wydarzenia do osobnego kalendarza „Finanse – płatności”.
+ * Powiadomienia na telefonie wysyła aplikacja Kalendarz Google. Wyzwalacz co godzinę dopisuje nowe terminy
+ * i usuwa wydarzenia płatności, które już zapłaciłeś.
+ * Pierwsze włączenie: w edytorze uruchom wlaczPrzypomnienia (zgoda na dostęp do Kalendarza).
+ */
+const CAL_NAME = 'Finanse – płatności';
+const REM_DEFAULT = { enabled: false, days: 3, hour: 9 };
+
+function remindersPrefs_() {
+  const r = readPrefs_('REMINDERS', {});
+  return { enabled: !!r.enabled, days: isFinite(r.days) ? r.days : REM_DEFAULT.days, hour: isFinite(r.hour) ? r.hour : REM_DEFAULT.hour,
+    lastSync: r.lastSync || null, error: r.error || null, count: r.count || 0 };
+}
+function remindersInfo_() { const r = remindersPrefs_(); r.calendar = CAL_NAME; return r; }
+function storeReminders_(r) { PropertiesService.getScriptProperties().setProperty('REMINDERS', JSON.stringify(r)); }
+
+function authHint_(e) {
+  const m = String(e && e.message || e);
+  return /authoriz|autoryz|uprawnie|permission|scopes/i.test(m)
+    ? 'Skrypt nie ma jeszcze dostępu do Kalendarza. W edytorze Apps Script uruchom raz funkcję wlaczPrzypomnienia i zatwierdź uprawnienia.'
+    : m;
+}
+
+function saveReminders(arg) {
+  const r = remindersPrefs_();
+  r.enabled = !!(arg && arg.enabled);
+  const days = Math.round(Number(arg && arg.days)), hour = Math.round(Number(arg && arg.hour));
+  if (isFinite(days)) r.days = Math.max(0, Math.min(14, days));
+  if (isFinite(hour)) r.hour = Math.max(5, Math.min(22, hour));
+  r.error = null;
+  storeReminders_(r);
+  try {
+    setReminderTrigger_(r.enabled);
+    syncReminders_(true);
+  } catch (e) {
+    const x = remindersPrefs_(); x.error = authHint_(e); storeReminders_(x);
+  }
+  invalidateModel_();
+  return JSON.stringify({ ok: true, model: JSON.parse(cachedModelJson_(true)) });
+}
+
+function setReminderTrigger_(on) {
+  ScriptApp.getProjectTriggers().forEach(function (t) { if (t.getHandlerFunction() === 'odswiezPrzypomnienia') ScriptApp.deleteTrigger(t); });
+  if (on) ScriptApp.newTrigger('odswiezPrzypomnienia').timeBased().everyHours(1).create();
+}
+
+/** Uruchom raz w edytorze (Uruchom → wlaczPrzypomnienia): zatwierdzasz dostęp do Kalendarza, a przypomnienia się włączają. */
+function wlaczPrzypomnienia() {
+  const r = remindersPrefs_(); r.enabled = true; r.error = null; storeReminders_(r);
+  setReminderTrigger_(true);
+  syncReminders_(true);
+  invalidateModel_();
+  Logger.log('Przypomnienia włączone. Wydarzenia są w kalendarzu „' + CAL_NAME + '”. Liczba: ' + remindersPrefs_().count);
+}
+
+/** Wywoływane przez wyzwalacz co godzinę. */
+function odswiezPrzypomnienia() {
+  try { syncReminders_(false); } catch (e) { const r = remindersPrefs_(); r.error = authHint_(e); storeReminders_(r); }
+}
+
+function reminderCalendar_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('CAL_ID');
+  let cal = null;
+  if (id) { try { cal = CalendarApp.getCalendarById(id); } catch (e) { cal = null; } }
+  if (!cal) {
+    cal = CalendarApp.createCalendar(CAL_NAME, { summary: 'Terminy płatności z aplikacji Finanse. Wydarzenia tworzy i usuwa skrypt.', color: CalendarApp.Color.RED });
+    props.setProperty('CAL_ID', cal.getId());
+  }
+  return cal;
+}
+
+function syncReminders_(force) {
+  const r = remindersPrefs_();
+  const props = PropertiesService.getScriptProperties();
+  if (!r.enabled && !props.getProperty('CAL_ID')) return;
+  const cal = reminderCalendar_();
+  const now = new Date();
+  const from = new Date(now.getTime() - 3 * 864e5), to = new Date(now.getTime() + 120 * 864e5);
+  const existing = {};
+  cal.getEvents(from, to).forEach(function (ev) {
+    const m = String(ev.getDescription() || '').match(/\[finanse:([^\]]+)\]/);
+    if (m) existing[m[1]] = ev;
+  });
+  const want = {};
+  if (r.enabled) {
+    const model = JSON.parse(cachedModelJson_(!!force));
+    const at = function (iso, hour) { const p = String(iso).split('-').map(Number); return new Date(p[0], p[1] - 1, p[2], hour, 0, 0); };
+    const nextHour = function () { const t = new Date(now.getFullYear(), now.getMonth(), now.getDate(), r.hour, 0, 0); if (t <= now) t.setDate(t.getDate() + 1); return t; };
+    const daysBefore = function (list) { return list.filter(function (d, i, a) { return d >= 0 && a.indexOf(d) === i; }).map(function (d) { return Math.min(40320, d * 1440); }); };
+    (model.payments || []).forEach(function (p) {
+      if (!p.dueDate) return;
+      const amount = p.toPay !== null && p.toPay !== undefined ? ' – ' + fmtPl_(p.toPay) + ' zł' : '';
+      const overdue = p.daysLeft < 0 && p.state !== 'paid';
+      if (overdue && p.daysLeft < -30) return;
+      const start = overdue ? nextHour() : at(p.dueDate, r.hour);
+      if (start > to) return;
+      want['pay:' + p.name + ':' + p.period + (overdue ? ':zalegle' : '')] = {
+        title: (overdue ? 'Zaległe: ' : 'Zapłać: ') + p.name + amount,
+        start: start, reminders: overdue ? [0] : daysBefore([r.days, 0]),
+        desc: 'Płatność za ' + String(p.periodMonth || '').toLowerCase() + ' ' + (p.periodYear || '') + ', termin ' + p.dueDate + '.' +
+          (p.credit > 0 ? ' Nadpłata ' + fmtPl_(p.credit) + ' zł zostanie odjęta.' : '') + '\nZapłać w aplikacji Finanse: Teraz → Do zapłaty.'
+      };
+    });
+    (model.deadlines || []).forEach(function (d) {
+      if (!d.date || d.daysLeft < 0 || d.daysLeft > 120) return;
+      want['dl:' + d.name + ':' + d.date] = {
+        title: 'Termin: ' + d.name + ' – ' + fmtPl_(d.amount) + ' zł',
+        start: at(d.date, r.hour), reminders: daysBefore([14, r.days, 0]),
+        desc: 'Termin roczny z zakładki Terminy.' + (d.note ? '\n' + d.note : '')
+      };
+    });
+  }
+  Object.keys(existing).forEach(function (tag) { if (!want[tag]) existing[tag].deleteEvent(); });
+  Object.keys(want).forEach(function (tag) {
+    const w = want[tag], ev = existing[tag];
+    const sig = w.title + '|' + w.start.getTime() + '|' + w.reminders.join(',');
+    if (ev && String(ev.getDescription() || '').indexOf('[sig:' + sha256_(sig).slice(0, 12) + ']') >= 0) return;   // bez zmian
+    if (ev) ev.deleteEvent();
+    const e = cal.createEvent(w.title, w.start, new Date(w.start.getTime() + 15 * 60000),
+      { description: w.desc + '\n\n[finanse:' + tag + '] [sig:' + sha256_(sig).slice(0, 12) + ']' });
+    e.removeAllReminders();
+    w.reminders.forEach(function (min) { e.addPopupReminder(min); });
+  });
+  const x = remindersPrefs_();
+  x.lastSync = now.toISOString(); x.error = null; x.count = Object.keys(want).length;
+  storeReminders_(x);
 }
 
 /* ============================ DIAGNOSTYKA ============================ */
