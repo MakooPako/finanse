@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '14';
+const CLIENT_VERSION = '15';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -768,7 +768,8 @@ function startApp(initial) {
       AC.loans.forEach(l => {
         const pct = l.amount ? Math.min(100, l.paid / l.amount * 100) : 0;
         let when = '';
-        if (sv.real && l.remaining > 0) {
+        if (sv.real && l.remaining > 0 && sv.base >= l.remaining) when = 'Na kontach masz już więcej, niż zostało do oddania.';
+        else if (sv.real && l.remaining > 0) {
           const S = sv.S, key = VARIANT === 'B' ? 'cumB' : 'cumA', n = S.length - 1;
           const hit = S.findIndex((x, i) => i > 0 && x[key] >= l.remaining);
           if (hit > 0) when = MONTHS_NOM[S[hit].ymi % 12] + ' ' + Math.floor(S[hit].ymi / 12);
@@ -776,7 +777,7 @@ function startApp(initial) {
             const avg = (S[n][key] - S[1][key]) / (n - 1);
             if (avg > 0) { const k = Math.ceil((l.remaining - S[n][key]) / avg); const ym = S[n].ymi + k; when = MONTHS_NOM[ym % 12] + ' ' + Math.floor(ym / 12); }
           }
-          if (when) {
+          if (when && !/^Na kontach/.test(when)) {
             const avgM = n >= 3 ? (S[n][key] - S[1][key]) / (n - 1) : 0;
             when = `Przy obecnym tempie${avgM > 0 ? ` (około ${zl(avgM)} miesięcznie)` : ''} na kontach będzie tyle, ile do oddania, około: <b>${esc(when)}</b>.`;
           }
@@ -785,13 +786,33 @@ function startApp(initial) {
         const undoOp = last && AC.ops.find(o => o.id === last.id && o.undoable);
         O += `<section class="panel loan" aria-labelledby="h-loan-${l.row}"><div class="panel-head"><div><h2 id="h-loan-${l.row}">${esc(l.name)}</h2>
           <p class="desc">${l.lender ? esc(l.lender) + '. ' : ''}${l.note ? esc(l.note) : ''}</p></div>
-          ${l.remaining > 0 ? `<button type="button" class="btn-sm primary-sm" data-loan-pay="${esc(l.name)}">Spłata</button>` : ''}</div>
-          <div class="row loan-row"><span>Oddane <b class="num">${zl(l.paid)}</b> z ${zl(l.amount)}</span><span>zostało <b class="num">${zl(l.remaining)}</b></span></div>
+          <div class="ph-btns">${l.remaining > 0 ? `<button type="button" class="btn-sm primary-sm" data-loan-pay="${esc(l.name)}">Spłata</button>` : ''}<button type="button" class="edit" data-debt-edit="loan:${l.row}">Edytuj</button></div></div>
+          <div class="row loan-row"><span>Oddane <b class="num">${zlc(l.paid)}</b> z ${zlc(l.amount)}</span><span>zostało <b class="num">${zlc(l.remaining)}</b></span></div>
           <div class="track"><span data-w="${pct}" style="background:var(--good)"></span></div>
+          <div class="loan-pct"><span>${Math.round(pct)}% spłacone</span><span>${100 - Math.round(pct)}% zostało</span></div>
           ${when ? `<p class="total">${when}</p>` : ''}
           ${l.history.length ? `<ul class="loan-hist">${l.history.map(h => `<li><span>${dayOf(h.at)}</span><span>${esc(h.account)}</span><b class="num">${zl(h.amount)}</b>${undoOp && h.id === undoOp.id ? `<button type="button" class="edit" data-acc-undo="${esc(h.id)}">Cofnij</button>` : ''}</li>`).join('')}</ul>` : '<p class="total">Spłaty pojawią się tutaj. Każda zmniejsza saldo wybranego konta i kwotę do oddania. Nie jest wydatkiem w budżecie miesiąca.</p>'}
         </section>`;
       });
+    }
+
+    // raty: pasek postępu z płatności w aplikacji (zapłacona część = cała rata)
+    if (AC) {
+      (AC.installments || []).forEach(x => {
+        const pct = x.amount ? Math.min(100, x.paid / x.amount * 100) : 0;
+        const mine = Math.round(x.rate * x.share) / 100;
+        const lastTxt = x.last ? MONTHS_NOM[+x.last.slice(5) - 1] + ' ' + x.last.slice(0, 4) : '';
+        O += `<section class="panel loan inst" aria-labelledby="h-inst-${x.row}"><div class="panel-head"><div><h2 id="h-inst-${x.row}">${esc(x.name)}</h2>
+          <p class="desc">${x.count} rat po ${zlc(x.rate)}${x.share < 100 ? `. Płacisz ${x.share}%: ${zlc(mine)} miesięcznie, a każda Twoja wpłata liczy się jako cała rata.` : '.'}${x.note ? ' ' + esc(x.note) : ''}</p></div>
+          <div class="ph-btns"><button type="button" class="edit" data-debt-edit="inst:${x.row}">Edytuj</button></div></div>
+          <div class="row loan-row"><span>Spłacone <b class="num">${zlc(x.paid)}</b> z ${zlc(x.amount)}</span><span>zostało <b class="num">${zlc(x.remaining)}</b></span></div>
+          <div class="track"><span data-w="${pct}" style="background:var(--good)"></span></div>
+          <div class="loan-pct"><span>${Math.round(pct)}% spłacone</span><span>${100 - Math.round(pct)}% zostało</span></div>
+          <p class="total inst-meta"><b>${x.paidCount} z ${x.count}</b> rat${x.left ? ` · zostało ${x.left}` : ' · spłacone w całości'}${x.next ? ` · następna ${fmtDay(x.next)}` : ''}${lastTxt ? ` · ostatnia około: ${lastTxt}` : ''}${x.share < 100 && x.remaining ? `<br>Twoja część do spłaty: <b class="num">${zlc(x.myRemaining)}</b>` : ''}</p>
+          ${!x.payment ? `<p class="total">Bez podpiętej płatności liczę tylko raty wpisane ręcznie. Podepnij płatność („Edytuj”), a każda rata zapłacona w aplikacji doliczy się sama.</p>` : !x.paymentFound ? `<p class="warn-line">Nie znalazłem płatności „${esc(x.payment)}”. Sprawdź nazwę w „Edytuj”.</p>` : ''}
+        </section>`;
+      });
+      O += `<div class="debt-add"><button type="button" class="btn-sm" data-debt-new>+ Dodaj pożyczkę albo raty</button></div>`;
     }
 
     // ile będzie na kontach (prognoza)
@@ -1786,7 +1807,7 @@ function startApp(initial) {
   const FS = { busy: false, submit: null };
   function openForm(title, html, label, submit) {
     $('formTitle').textContent = title;
-    $('formBody').innerHTML = html;
+    $('formBody').innerHTML = html; $('formBody').onclick = null;
     $('formErr').textContent = '';
     $('formSave').textContent = label; $('formSave').disabled = false;
     FS.submit = submit; FS.label = label;
@@ -1865,8 +1886,46 @@ function startApp(initial) {
         return a ? 'Zapisano zmiany konta.' : 'Dodano konto „' + esc(val('acName')) + '”. Wpisz jego saldo w „Aktualizuj salda”.';
       });
   }
+  function openDebt(kind, row) {
+    const AC = D.accounts; if (!AC) return;
+    const x = row ? (kind === 'inst' ? AC.installments : AC.loans).find(y => y.row === row) : null;
+    const DF = { kind: x ? kind : 'inst' };
+    const payNames = (D.payments || []).filter(p => !p.income).map(p => p.name);
+    const body = () => `${x ? '' : `<div class="seg" role="group" aria-label="Rodzaj"><button type="button" data-dk="inst" aria-pressed="${DF.kind === 'inst'}">Raty</button><button type="button" data-dk="loan" aria-pressed="${DF.kind === 'loan'}">Pożyczka</button></div>
+      <p class="hint-avg">${DF.kind === 'inst' ? 'Stała rata co miesiąc, np. sprzęt, samochód, kredyt.' : 'Oddajesz, kiedy chcesz, z wybranego konta (przycisk „Spłata”).'}</p>`}
+      <label class="field"><span>Nazwa</span><input id="dName" maxlength="50" autocomplete="off" value="${x ? esc(x.name) : ''}" placeholder="${DF.kind === 'inst' ? 'np. Raty telefon' : 'np. Pożyczka od brata'}"></label>
+      ${DF.kind === 'inst' ? `<div class="two-col"><label class="field"><span>Kwota łącznie (zł)</span><input class="num-in" id="dAmount" inputmode="decimal" value="${x ? String(x.amount).replace('.', ',') : ''}"></label>
+        <label class="field"><span>Liczba rat</span><input class="num-in" id="dCount" type="number" min="1" inputmode="numeric" value="${x ? x.count : ''}"></label></div>
+        <div class="two-col"><label class="field"><span>Twoja część (%)</span><input class="num-in" id="dShare" type="number" min="1" max="100" inputmode="numeric" value="${x ? x.share : 100}"></label>
+        <label class="field"><span>Już spłacone rat</span><input class="num-in" id="dPaid" type="number" min="0" inputmode="numeric" value="${x ? x.paidBase : 0}"></label></div>
+        <label class="field"><span>Stan na miesiąc (łącznie z nim)</span><input class="num-in" id="dAsOf" type="month" value="${x ? esc(x.asOf) : D.year + '-' + String(D.currentMonth + 1).padStart(2, '0')}"></label>
+        <label class="field"><span>Płatność w aplikacji</span><select id="dPay"><option value="">— bez płatności —</option>${payNames.map(n => `<option${x && x.payment === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select></label>
+        <p class="hint-avg">Każdy zapłacony termin tej płatności po miesiącu „stan na” liczy się jako jedna cała rata, także gdy płacisz tylko swoją część.</p>`
+      : `<div class="two-col"><label class="field"><span>Kwota (zł)</span><input class="num-in" id="dAmount" inputmode="decimal" value="${x ? String(x.amount).replace('.', ',') : ''}"></label>
+        <label class="field"><span>Od kogo</span><input id="dLender" maxlength="40" value="${x ? esc(x.lender) : ''}"></label></div>`}
+      <label class="field"><span>Uwagi</span><input id="dNote" maxlength="120" value="${x ? esc(x.note) : ''}"></label>
+      ${x ? `<button type="button" class="danger" data-debt-del>Usuń „${esc(x.name)}”</button>` : ''}`;
+    openForm(x ? 'Edytuj: ' + x.name : 'Nowe zobowiązanie', body(), x ? 'Zapisz zmiany' : 'Dodaj', async () => {
+      await accCall('saveDebt', { kind: DF.kind, row: x ? x.row : null, originalName: x ? x.name : '', name: val('dName'), amount: val('dAmount'),
+        lender: val('dLender'), note: val('dNote'), count: val('dCount'), share: val('dShare'), paidBase: val('dPaid'), asOf: val('dAsOf'), payment: $('dPay') ? $('dPay').value : '' });
+      return x ? 'Zapisano zmiany.' : 'Dodano „' + esc(val('dName')) + '”.';
+    });
+    $('formBody').onclick = async e => {
+      const k = e.target.closest('[data-dk]');
+      if (k) { DF.kind = k.dataset.dk; const n = val('dName'); $('formBody').innerHTML = body(); $('dName').value = n; return; }
+      const del = e.target.closest('[data-debt-del]');
+      if (del) {
+        if (!del.dataset.armed) { del.dataset.armed = '1'; del.textContent = 'Na pewno usunąć?'; return; }
+        del.disabled = true;
+        try { await accCall('deleteDebt', { kind: DF.kind, row: x.row, name: x.name }); hideSheet(); toast('Usunięto „' + esc(x.name) + '”.'); }
+        catch (er) { $('formErr').textContent = er.message || String(er); del.disabled = false; }
+      }
+    };
+  }
   document.addEventListener('click', async e => {
     let b;
+    if ((b = e.target.closest('[data-debt-edit]'))) { const [k, r] = b.dataset.debtEdit.split(':'); openDebt(k, +r); return; }
+    if (e.target.closest('[data-debt-new]')) { openDebt('inst', null); return; }
     if (e.target.closest('[data-acc-update]')) openBalances();
     else if ((b = e.target.closest('[data-acc-transfer]'))) { if (!b.disabled) openTransfer(b.dataset.from, b.dataset.to, b.dataset.amount); }
     else if ((b = e.target.closest('[data-loan-pay]'))) openRepay(b.dataset.loanPay);

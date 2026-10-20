@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '14',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '15',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -88,6 +88,7 @@ function doPost(e) {
       confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
       editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders, subAnswer: subAnswer,
       saveBalances: saveBalances, transferBetween: transferBetween, repayLoan: repayLoan, undoAccountOp: undoAccountOp, saveAccount: saveAccount,
+      saveDebt: saveDebt, deleteDebt: deleteDebt,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -927,6 +928,12 @@ function buildModel_(ctx) {
   const answers = ctx.subAnswers || {};
   const todayIso = isoOf(t0);
   const ymStr = function (ymi) { return Math.floor(ymi / 12) + '-' + ('0' + (ymi % 12 + 1)).slice(-2); };
+  // miesiące (terminy), za które w arkuszu jest już kwota – do liczenia spłaconych rat
+  const paidPeriodsOf = function (m) {
+    const key = m.blk.cols[m.ci].key, out = [];
+    for (let x = todayYmi - 24; x <= todayYmi + 12; x++) { if (!m.isDue(x)) continue; const v = cellOf(x, m.blk.id, key); if (v !== null && v > 0) out.push(ymStr(x)); }
+    return out;
+  };
 
   /* Subskrypcja (pobiera się sama): po dniu pobrania aplikacja pyta „Pobrało się?”.
      Odpowiedź „tak” to zwykły wpis powiązany z płatnością; „jeszcze nie” i „nie w tym miesiącu” są w Script Properties (SUB_ANSWERS). */
@@ -967,7 +974,7 @@ function buildModel_(ctx) {
       period: ymStr(period), periodMonth: CFG.MONTH_NAME[period % 12], periodYear: Math.floor(period / 12),
       dueDate: isoOf(chargeOf(period)), daysLeft: daysLeft, state: state, snoozedUntil: lastAns && lastAns.a === 'later' ? lastAns.until : null,
       last: last === null || !lastAns ? null : { period: ymStr(last), month: CFG.MONTH_NAME[last % 12], answer: lastAns.a, amount: lastAns.amount === undefined ? null : r2_(Math.abs(lastAns.amount)) },
-      invoiceDay: null, invoiceDate: null, waiting: false, paid: null
+      invoiceDay: null, invoiceDate: null, waiting: false, paid: null, paidPeriods: paidPeriodsOf(m)
     };
   };
 
@@ -1017,7 +1024,7 @@ function buildModel_(ctx) {
       toPay: estimate === null ? null : r2_(Math.max(0, estimate - p.credit)),
       period: Math.floor(next / 12) + '-' + ('0' + (next % 12 + 1)).slice(-2), periodMonth: CFG.MONTH_NAME[next % 12], periodYear: Math.floor(next / 12),
       dueDate: isoOf(dueOf(next)), daysLeft: daysLeft, state: state,
-      invoiceDay: p.invoiceDay, invoiceDate: invoiceAt === null ? null : isoOf(invoiceAt), waiting: invoiceAt !== null && invoiceAt > t0,
+      invoiceDay: p.invoiceDay, invoiceDate: invoiceAt === null ? null : isoOf(invoiceAt), waiting: invoiceAt !== null && invoiceAt > t0, paidPeriods: paidPeriodsOf(m),
       paid: currentPaid ? { month: CFG.MONTH_NAME[lastPaid.ymi % 12], amount: r2_(lastPaid.v) } : null
     };
   }).filter(Boolean).sort(function (a, b) {
@@ -1897,7 +1904,7 @@ const ACC_KINDS = ['bieżące', 'oszczędnościowe', 'walutowe', 'gotówka', 'in
 const ACC_ROLES = ['wpływy', 'na co dzień', 'oszczędności', ''];
 
 function parseAccounts_(v) {
-  const out = { accounts: [], loans: [], sectionRows: {} };
+  const out = { accounts: [], loans: [], installments: [], sectionRows: {} };
   if (!v) return out;
   let section = null;
   for (let r = 0; r < v.length; r++) {
@@ -1905,6 +1912,7 @@ function parseAccounts_(v) {
     if (!a) continue;
     if (a === 'KONTA') { section = 'acc'; out.sectionRows.acc = r + 1; continue; }
     if (a === 'POŻYCZKI') { section = 'loan'; out.sectionRows.loan = r + 1; continue; }
+    if (a === 'RATY') { section = 'inst'; out.sectionRows.inst = r + 1; continue; }
     if (a === 'NAZWA') continue;
     const name = String(v[r][0]).trim();
     if (section === 'acc') {
@@ -1915,6 +1923,15 @@ function parseAccounts_(v) {
       const amount = toNum_(v[r][1]);
       if (amount === null) continue;
       out.loans.push({ row: r + 1, name: name, amount: amount, lender: String(v[r][2] || '').trim(), since: parseDate_(v[r][3]), note: String(v[r][4] || '').trim() });
+    } else if (section === 'inst') {
+      // RATY: Nazwa | Kwota łącznie | Liczba rat | Moja część (%) | Płatność w aplikacji | Spłacone rat | Stan na (RRRR-MM) | Uwagi
+      const amount = toNum_(v[r][1]), count = toNum_(v[r][2]);
+      if (amount === null || !(count >= 1)) continue;
+      const share = toNum_(v[r][3]);
+      const asOf = parseYm_(v[r][6]);
+      out.installments.push({ row: r + 1, name: name, amount: amount, count: Math.round(count), share: share > 0 && share <= 100 ? share : 100,
+        payment: String(v[r][4] || '').trim(), paidBase: Math.max(0, Math.round(toNum_(v[r][5]) || 0)),
+        asOf: asOf === null ? '' : Math.floor(asOf / 12) + '-' + ('0' + (asOf % 12 + 1)).slice(-2), note: String(v[r][7] || '').trim() });
     }
   }
   return out;
@@ -1997,6 +2014,24 @@ function accountsModel_(ss, model) {
       paid: paid, remaining: r2_(Math.max(0, l.amount - paid)),
       history: pays.slice(-12).reverse().map(function (x) { return { id: x.id, at: iso(x.at), amount: r2_(-(x.change || 0)), account: x.account, desc: x.desc }; }) };
   });
+  // raty: spłacone = stan z zakładki Konta + kolejne zapłacone terminy podpiętej płatności (zapłacona część = cała rata)
+  const installments = A.installments.map(function (x) {
+    const rate = r2_(x.amount / x.count);
+    const pay = (model.payments || []).filter(function (p) { return p.name === x.payment; })[0] || null;
+    const after = pay && pay.paidPeriods ? pay.paidPeriods.filter(function (pp) { return !x.asOf || pp > x.asOf; }) : [];
+    const paidCount = Math.min(x.count, x.paidBase + after.length);
+    const left = x.count - paidCount;
+    let next = null, last = null;
+    if (left > 0 && pay) {
+      next = pay.dueDate;
+      const d = pay.dueDate.split('-').map(Number), endYmi = d[0] * 12 + d[1] - 1 + (left - 1) * (pay.every || 1);
+      last = Math.floor(endYmi / 12) + '-' + ('0' + (endYmi % 12 + 1)).slice(-2);
+    }
+    return { row: x.row, name: x.name, amount: r2_(x.amount), count: x.count, rate: rate, share: x.share, payment: x.payment, paymentFound: !!pay,
+      paidBase: x.paidBase, asOf: x.asOf, note: x.note, paidCount: paidCount, left: left,
+      paid: r2_(Math.min(x.amount, paidCount * rate)), remaining: r2_(Math.max(0, x.amount - paidCount * rate)),
+      myRemaining: r2_(Math.max(0, x.amount - paidCount * rate) * x.share / 100), next: next, last: last };
+  });
   // ostatnie operacje (do historii i cofania)
   const ops = [], seen = {};
   for (let i = log.length - 1; i >= 0 && ops.length < 15; i--) {
@@ -2010,7 +2045,7 @@ function accountsModel_(ss, model) {
   return {
     list: list, total: total, totalEst: totalEst, lastUpdate: iso(lastAt),
     daysSinceUpdate: lastAt ? Math.floor((now - lastAt) / 864e5) : null,
-    change: change, loans: loans, ops: ops, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
+    change: change, loans: loans, installments: installments, ops: ops, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
   };
 }
 
@@ -2139,6 +2174,80 @@ function saveAccount(arg) {
     sh.getRange(last + 1, 1, 1, 5).setValues([row]);
     clearRole();
     return { account: name };
+  });
+}
+
+
+const INST_HEADER = ['Nazwa', 'Kwota łącznie (zł)', 'Liczba rat', 'Moja część (%)', 'Płatność w aplikacji', 'Spłacone rat', 'Stan na (RRRR-MM)', 'Uwagi'];
+
+/**
+ * Zobowiązanie: pożyczka (spłaty kiedy chcesz) albo raty (podpięte do płatności cyklicznej).
+ * { kind: 'loan'|'inst', row?, originalName?, name, amount, lender, note, count, share, payment, paidBase, asOf }
+ */
+function saveDebt(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    if (!sh) throw new Error('Brak zakładki „' + CFG.ACCOUNTS_SHEET + '”.');
+    const A = parseAccounts_(sh.getDataRange().getValues());
+    const name = cleanText_(a.name, 50);
+    if (!name) throw new Error('Nadaj nazwę.');
+    const amount = money_(a.amount);
+    if (!(amount > 0)) throw new Error('Wpisz kwotę.');
+    const inst = a.kind === 'inst';
+    const list = inst ? A.installments : A.loans;
+    const all = A.loans.concat(A.installments);
+    let row;
+    if (inst) {
+      const count = Math.round(Number(a.count));
+      if (!(count >= 1 && count <= 600)) throw new Error('Podaj liczbę rat.');
+      const share = a.share === '' || a.share === undefined || a.share === null ? 100 : Number(String(a.share).replace(',', '.'));
+      if (!(share > 0 && share <= 100)) throw new Error('Twoja część: od 1 do 100%.');
+      const paidBase = Math.round(Number(a.paidBase) || 0);
+      if (paidBase < 0 || paidBase > count) throw new Error('Spłacone raty: od 0 do ' + count + '.');
+      const asOf = a.asOf ? parseYm_(a.asOf) : null;
+      if (a.asOf && asOf === null) throw new Error('Miesiąc „stan na” w formacie RRRR-MM.');
+      row = [name, amount, count, share, cleanText_(a.payment, 60), paidBase, asOf === null ? '' : Math.floor(asOf / 12) + '-' + ('0' + (asOf % 12 + 1)).slice(-2), cleanText_(a.note, 120)];
+    } else {
+      row = [name, amount, cleanText_(a.lender, 40), '', cleanText_(a.note, 120)];
+    }
+    if (a.row) {
+      const cur = list.filter(function (x) { return x.row === a.row; })[0];
+      if (!cur || cur.name !== a.originalName) throw new Error('Zakładka Konta zmieniła się w międzyczasie. Odśwież aplikację.');
+      if (name !== cur.name && all.some(function (x) { return x.name === name; })) throw new Error('„' + name + '” już istnieje.');
+      if (!inst) row[3] = sh.getRange(a.row, 4).getValue();   // data „od” zostaje
+      sh.getRange(a.row, 1, 1, row.length).setValues([row]);
+      if (inst) sh.getRange(a.row, 7).setNumberFormat('@').setValue(row[6]);
+      if (!inst && name !== cur.name) {
+        const bs = ss.getSheetByName(CFG.BALANCES_SHEET);   // spłaty idą za nową nazwą
+        if (bs && bs.getLastRow() > 1) bs.getRange(2, 8, bs.getLastRow() - 1, 1).getValues().forEach(function (r, i) { if (String(r[0]).trim() === cur.name) bs.getRange(i + 2, 8).setValue(name); });
+      }
+      return { debt: name };
+    }
+    if (all.some(function (x) { return x.name === name; })) throw new Error('„' + name + '” już istnieje.');
+    let header = inst ? A.sectionRows.inst : A.sectionRows.loan;
+    if (!header) {   // brak sekcji: dopisz ją na końcu zakładki
+      const at = sh.getLastRow() + 2;
+      sh.getRange(at, 1, 2, inst ? INST_HEADER.length : LOAN_HEADER.length).setValues([[inst ? 'RATY' : 'POŻYCZKI'].concat(new Array((inst ? INST_HEADER.length : LOAN_HEADER.length) - 1).fill('')), inst ? INST_HEADER : LOAN_HEADER]);
+      sh.getRange(at, 1, 2, 1).setFontWeight('bold');
+      header = at;
+    }
+    const last = list.length ? Math.max.apply(null, list.map(function (x) { return x.row; })) : header + 1;
+    sh.insertRowAfter(last);
+    sh.getRange(last + 1, 1, 1, row.length).setValues([row]);
+    if (inst) sh.getRange(last + 1, 7).setNumberFormat('@').setValue(row[6]);
+    return { debt: name };
+  });
+}
+
+/** Usunięcie zobowiązania (np. po całkowitej spłacie). Historia spłat pożyczki zostaje w „Historii kont”. */
+function deleteDebt(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    const A = parseAccounts_(sh.getDataRange().getValues());
+    const cur = (a.kind === 'inst' ? A.installments : A.loans).filter(function (x) { return x.row === a.row; })[0];
+    if (!cur || cur.name !== a.name) throw new Error('Zakładka Konta zmieniła się w międzyczasie. Odśwież aplikację.');
+    sh.deleteRow(a.row);
+    return {};
   });
 }
 

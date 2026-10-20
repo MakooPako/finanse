@@ -651,3 +651,7 @@
   .tag.tg-man { color: #9cc2f2; border: 1px solid #2c4a72; }
   .tag.tg-in { color: #7fd98f; border: 1px solid #2f5a3a; }
   .ph-btns { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+  .loan-pct { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .inst-meta b { color: var(--text); }
+  .debt-add { display: flex; justify-content: center; }
+  #formSheet .danger { margin-top: 14px; }
