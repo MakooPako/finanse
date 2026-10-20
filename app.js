@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '15';
+const CLIENT_VERSION = '16';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -35,6 +35,10 @@ function startApp(initial) {
   const BLOCK_ORDER = ['mieszkanie', 'nieistotne', 'wazne', 'auto', 'tbs', 'kredyt', 'wakacje'];
   const BLOCK_COLOR = { mieszkanie: '#3987e5', nieistotne: '#d95926', wazne: '#199e70', auto: '#c98500', tbs: '#d55181', kredyt: '#008300', wakacje: '#9085e9', other: '#5b6779' };
   // kolory bloków: własne z Ustawień (zapisane w skrypcie, wspólne dla urządzeń) albo domyślne
+  // kolory kont (wykres „Ile będzie na kontach”, pasek sumy, lista): z zakładki Konta albo domyślne
+  const ACC_PAL = ['#2f8f6b', '#5b8def', '#e0b84c', '#c0567a', '#8e7cf0', '#3fb7c9', '#d9773c', '#7c8a9e', '#9bc35a', '#e86f9e'];
+  let ACC_PREVIEW = {};
+  const accColor = name => { const L = (D && D.accounts && D.accounts.list) || []; const i = L.findIndex(a => a.name === name); const a = L[i]; return ACC_PREVIEW[name] || (a && a.color) || ACC_PAL[(i < 0 ? 0 : i) % ACC_PAL.length]; };
   const colorOf = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
   const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
@@ -382,6 +386,8 @@ function startApp(initial) {
       ${pairs.length ? `<p class="rem-err">Podobne kolory: ${pairs.map(p => esc(nameOf(p[0])) + ' i ' + esc(nameOf(p[1]))).join('; ')}. Na wykresie trudno będzie je odróżnić.</p>` : ''}
       <div class="dev-acts">${COLOR_DRAFT ? '<button type="button" class="btn-sm primary-sm" data-color-save>Zapisz kolory</button><button type="button" class="btn-sm" data-color-cancel>Anuluj</button>' : ''}
         ${custom && !COLOR_DRAFT ? '<button type="button" class="btn-sm" data-color-default>Przywróć domyślne</button>' : ''}</div>
+      ${D.accounts && chartAccounts().length ? `<h3 class="col-h">Kolory kont</h3><p class="desc">Na wykresie „Ile będzie na kontach” i przy liście kont. Zapisują się od razu.</p>
+        <ul class="col-list">${chartAccounts().map(a => `<li><label><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><span>${esc(a.name)}</span></label></li>`).join('')}</ul>` : ''}
     </section>`;
   }
   // podczas wybierania (input) zmieniamy tylko podgląd, żeby nie zamknąć okna wyboru koloru; po wyborze (change) odświeżamy panel
@@ -492,6 +498,21 @@ function startApp(initial) {
           <button type="button" class="pay-btn ghost" data-sub-later="${p.row}">Jeszcze nie</button><button type="button" class="edit" data-sub-skip="${p.row}">W tym miesiącu nie będzie</button></div></li>`).join('')}</ul></section>`;
   }
 
+  // wiersz subskrypcji (Teraz i Plan)
+  const EVN = { 1: 'co miesiąc', 2: 'co 2 miesiące', 3: 'co kwartał', 6: 'co pół roku', 12: 'co rok' };
+  const subRow = p => {
+    const pend = subPending(p);
+    const when = p.state === 'ask' && !pend ? `<b class="warn-txt">czeka na odpowiedź</b> (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+      : p.state === 'ask' ? 'zapisuję w arkuszu…'
+      : p.state === 'snoozed' ? `zapytam ponownie ${fmtDay(p.snoozedUntil)} (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+      : `następne ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
+    const last = p.last && p.state === 'scheduled' ? (p.last.answer === 'skip' ? `w ${MONTHS_LOC[+p.last.period.slice(5) - 1]} nie było` : `${p.last.month.toLowerCase()}: ${p.last.amount !== null ? zlc(p.last.amount) : '✓'}`) : '';
+    return `<li class="pay st-${p.state === 'ask' && !pend ? 'soon' : p.state === 'scheduled' ? 'paid' : 'ok'}" data-fx="auto"><span class="stripe" aria-hidden="true"></span>
+      <div><div class="nm">${esc(p.name)} <span class="tag ${p.income ? 'tg-in' : 'tg-auto'}">${p.income ? 'wpływ' : 'pobiera się samo'}</span></div><div class="when">${when}</div>
+      <div class="sub">${EVN[p.every] || 'co ' + p.every + ' mies.'}${p.every === 12 ? ', ' + fmtDay(p.dueDate) : `, ${p.day}. dnia`}${last ? ' · ' + last : ''}${!p.income && p.perYear !== null && p.every < 12 ? ` · ${zlc(Math.round(p.perYear))} rocznie` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
+      <div class="act"><span class="amt">${p.toPay !== null ? (p.income ? '+' : '') + zlc(p.toPay) : '?'}</span>${p.amount === null && p.toPay !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
+  };
+
   /* ================= TERAZ: płatności ================= */
   const PAY_TXT = { overdue: 'po terminie', urgent: 'pilne', soon: 'wkrótce', ok: 'zaplanowane', paid: 'zapłacone' };
   const payRow = p => {
@@ -517,7 +538,12 @@ function startApp(initial) {
     <button type="button" class="btn-sm" data-pay-new>+ Dodaj</button></div>`;
   if (due.length) payH += `<ul class="pay-list">${due.map(payRow).join('')}</ul>`;
   if (paid.length) payH += `<details class="paid-more" data-keep="paid"${OPEN_CATS.has('paid') ? ' open' : ''}><summary><span>Zapłacone w tym okresie <small>${paid.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary><ul class="pay-list">${paid.map(payRow).join('')}</ul></details>`;
-  if (nextSub) payH += `<p class="sub-next">Najbliższa subskrypcja: <b>${esc(nextSub.name)}</b> ${dni(nextSub.daysLeft)}${nextSub.toPay !== null ? `, ${zlc(nextSub.toPay)}` : ''}. <button type="button" class="edit" data-goto="plan" data-scroll="h-fixed">Wszystkie stałe opłaty</button></p>`;
+  if (subs.length) {
+    const sl = subs.slice().sort((a, b) => (a.state === 'scheduled') - (b.state === 'scheduled') || a.daysLeft - b.daysLeft);
+    payH += `<details class="paid-more subs-more" data-keep="subs"${OPEN_CATS.has('subs') ? ' open' : ''}><summary><span>Subskrypcje <small>${subs.length}</small>${nextSub ? `<em class="sum-note">najbliższa: ${esc(nextSub.name)} ${dni(nextSub.daysLeft)}${nextSub.toPay !== null ? ', ' + zlc(nextSub.toPay) : ''}</em>` : ''}</span><span class="chev" aria-hidden="true">▶</span></summary>
+      <ul class="pay-list">${sl.map(subRow).join('')}</ul>
+      <p class="sub-next"><button type="button" class="edit" data-goto="plan" data-scroll="h-fixed">Wszystkie stałe opłaty w Planie</button></p></details>`;
+  }
   payH += `</section>`;
 
   /* ================= TERAZ: limity ================= */
@@ -596,35 +622,34 @@ function startApp(initial) {
   /* ================= PLAN: wariant dochodu + podsumowanie ================= */
   const saveMonthly = D.deadlines.filter(d => d.daysLeft >= 0 && d.daysLeft <= 366).reduce((s, d) => s + d.monthly, 0);
   const nextDl = D.deadlines.find(d => d.daysLeft >= 0);
-  V.plan += `<section class="panel variant" aria-labelledby="h-var"><div class="panel-head"><div><h2 id="h-var">Dochód w prognozie</h2>
-    <p class="desc">${VARIANT === 'B' ? `Średnia z premiami: ${zl(D.tax.netB)} netto przed drugim progiem.` : `Pensja podstawowa: ${zl(D.tax.netA)} netto (${zl(D.tax.grossA)} brutto) przed drugim progiem.`} Wszystkie kwoty w Planie liczą się według tego wyboru.</p></div>
-    <div class="seg-sm" role="group" aria-label="Wariant dochodu"><button type="button" data-variant="A" aria-pressed="${VARIANT === 'A'}">Ostrożnie</button><button type="button" data-variant="B" aria-pressed="${VARIANT === 'B'}">Z premiami</button></div></div>
-    <div class="figures">
-      <div><span class="k">Na koniec ${D.year} zostanie</span><span class="v num">${zlR(D.yearEnd.leftA, D.yearEnd.leftB)}</span><span class="s">od stycznia do grudnia</span></div>
-      <div><span class="k">Rezerwa na terminy</span><span class="v num">${zl(saveMonthly)}</span><span class="s">${nextDl ? 'miesięcznie, najbliższy: ' + esc(nextDl.name) : 'brak terminów'}</span></div>
+  // wariant dochodu: przełącznik i liczby trafiają do prognozy w zakładce Oszczędności
+  const varSeg = `<div class="seg-sm" role="group" aria-label="Wariant dochodu"><button type="button" data-variant="A" aria-pressed="${VARIANT === 'A'}">Ostrożnie</button><button type="button" data-variant="B" aria-pressed="${VARIANT === 'B'}">Z premiami</button></div>`;
+  const varDesc = VARIANT === 'B' ? `Dochód: średnia z premiami, ${zl(D.tax.netB)} netto przed drugim progiem.` : `Dochód: pensja podstawowa, ${zl(D.tax.netA)} netto (${zl(D.tax.grossA)} brutto) przed drugim progiem.`;
+  const varFigs = `<div class="figures">
+      <div><span class="k">Na koniec ${D.year} zostanie</span><span class="v num">${zlR(D.yearEnd.leftA, D.yearEnd.leftB)}</span><span class="s">dochód minus wydatki, od stycznia do grudnia</span></div>
       ${(() => { const f = (D.forecast || []).find(x => !x.isCurrent); if (!f) return ''; const lv = VARIANT === 'B' ? f.leftB : f.leftA; return `<div><span class="k">W przyszłym miesiącu ${lv < 0 ? 'zabraknie' : 'zostanie'}</span><span class="v num">${zl(Math.abs(lv))}</span><span class="s">${esc(D.monthNames[f.m] || f.label)}: dochód ${zl(VARIANT === 'B' ? f.incomeB : f.incomeA)}, wydatki ${zl(f.expenses)}</span></div>`; })()}
-    </div></section>`;
+    </div>`;
 
-  /* ================= PLAN: prognoza ================= */
-  let fcH = `<section class="panel" aria-labelledby="h-fc"><h2 id="h-fc">Prognoza na ${D.forecast.length} mies.</h2>
-    <p class="desc">Typowy miesiąc z ostatnich danych, plus raty, terminy i podatek.</p>`;
+  /* ================= prognoza miesiąc po miesiącu (w zakładce Oszczędności) ================= */
+  let fcTable = '';
   if (D.forecast.length) {
+    const SVt = savSeries(), onAcc = ymi => { const x = SVt.real ? SVt.S.find(y => y.ymi === ymi) : null; return x ? (VARIANT === 'B' ? x.cumB : x.cumA) : null; };
     const maxLeft = Math.max(1, ...D.forecast.map(f => Math.abs(VARIANT === 'B' ? f.leftB : f.leftA)));
-    fcH += `<table><thead><tr><th>Miesiąc</th><th class="n">Dochód</th><th class="n">Wydatki</th><th class="n">Zostaje</th></tr></thead><tbody>`;
-    D.forecast.forEach(f => {
-      const lv = VARIANT === 'B' ? f.leftB : f.leftA;
-      fcH += `<tr><td>${f.label}${f.isCurrent ? '<span class="now">teraz</span>' : ''}${f.items.length ? `<div class="items">${f.items.map(esc).join(', ')}</div>` : ''}</td>
+    fcTable += `<table class="fc-table"><thead><tr><th>Miesiąc</th><th class="n">Dochód</th><th class="n">Wydatki</th><th class="n">Zostaje</th>${SVt.real ? '<th class="n">Na kontach</th>' : ''}</tr></thead><tbody>`;
+    D.forecast.filter(f => f.inHorizon !== false).forEach(f => {
+      const lv = VARIANT === 'B' ? f.leftB : f.leftA, acc = onAcc(f.ymi);
+      fcTable += `<tr><td>${f.label}${f.isCurrent ? '<span class="now">teraz</span>' : ''}${f.items.length ? `<div class="items">${f.items.map(esc).join(', ')}</div>` : ''}</td>
         <td class="n num">${zlR(f.incomeA, f.incomeB)}</td><td class="n num">${zl(f.expenses)}</td>
-        <td class="n num left${lv < 0 ? ' neg' : ''}">${zl(lv)}<i style="width:${Math.abs(lv) / maxLeft * 52}%"></i></td></tr>`;
+        <td class="n num left${lv < 0 ? ' neg' : ''}">${zl(lv)}<i style="width:${Math.abs(lv) / maxLeft * 52}%"></i></td>${SVt.real ? `<td class="n num">${acc === null ? '' : zl(acc)}</td>` : ''}</tr>`;
     });
-    const sumA = D.forecast.reduce((s, f) => s + f.leftA, 0), sumB = D.forecast.reduce((s, f) => s + f.leftB, 0);
-    fcH += `</tbody></table><p class="total">W tym okresie zostanie około <b class="num" style="color:var(--text)">${zlR(sumA, sumB)}</b>.</p>`;
-  } else fcH += `<p class="desc">Ten rok jest już zamknięty.</p>`;
-  fcH += `</section>`;
+    const hz = D.forecast.filter(f => f.inHorizon !== false);
+    const sumA = hz.reduce((s2, f) => s2 + f.leftA, 0), sumB = hz.reduce((s2, f) => s2 + f.leftB, 0);
+    fcTable += `</tbody></table><p class="total">W ${hz.length} mies. zostanie około <b class="num" style="color:var(--text)">${zlR(sumA, sumB)}</b>. Typowy miesiąc z ostatnich danych, plus raty, terminy i podatek.</p>`;
+  }
 
   /* ================= PLAN: terminy ================= */
   let dueH = `<section class="panel" aria-labelledby="h-due"><h2 id="h-due">Terminy i wydatki roczne</h2>
-    <p class="desc">Rezerwa to kwota, którą co miesiąc warto zostawić na koncie, żeby zebrać całość do terminu.</p>`;
+    <p class="desc">Rezerwa to kwota, którą co miesiąc warto zostawić na koncie, żeby zebrać całość do terminu.${saveMonthly ? ` Razem około <b class="num">${zl(saveMonthly)}</b> miesięcznie${nextDl ? `, najbliższy: ${esc(nextDl.name)}` : ''}.` : ''}</p>`;
   if (!D.deadlines.length) dueH += `<p class="desc">Nie ma terminów. Dodasz je w zakładce Terminy w arkuszu.</p>`;
   D.deadlines.forEach(d => {
     const col = d.daysLeft < 0 ? 'var(--muted)' : d.daysLeft <= 14 ? 'var(--critical)' : d.alert ? 'var(--warning)' : 'var(--income)';
@@ -639,7 +664,6 @@ function startApp(initial) {
   });
   if (D.commitments.length) dueH += `<div class="rates">${D.commitments.map(c => `<div><span>${esc(c.name)}, od ${c.from || '?'}${c.to ? ' do ' + c.to : ''}</span><span class="num">${zl(c.amount)}</span></div>`).join('')}</div>`;
   dueH += `</section>`;
-  V.plan += `<div class="cols">${fcH}${dueH}</div>`;
 
   /* ================= PLAN: stałe opłaty (płacone ręcznie i pobierane same) ================= */
   {
@@ -651,18 +675,7 @@ function startApp(initial) {
     const unknown = out.filter(p => perMonth(p) === null).length;
     const EV = { 1: 'co miesiąc', 2: 'co 2 miesiące', 3: 'co kwartał', 6: 'co pół roku', 12: 'co rok' };
     const row = p => {
-      if (p.auto) {
-        const pend = subPending(p);
-        const when = p.state === 'ask' && !pend ? `<b class="warn-txt">czeka na odpowiedź</b> (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
-          : p.state === 'ask' ? 'zapisuję w arkuszu…'
-          : p.state === 'snoozed' ? `zapytam ponownie ${fmtDay(p.snoozedUntil)} (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
-          : `następne ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
-        const last = p.last && p.state === 'scheduled' ? (p.last.answer === 'skip' ? `w ${MONTHS_LOC[+p.last.period.slice(5) - 1]} nie było` : `${p.last.month.toLowerCase()}: ${p.last.amount !== null ? zlc(p.last.amount) : '✓'}`) : '';
-        return `<li class="pay st-${p.state === 'ask' && !pend ? 'soon' : p.state === 'scheduled' ? 'paid' : 'ok'}" data-fx="auto"><span class="stripe" aria-hidden="true"></span>
-          <div><div class="nm">${esc(p.name)} <span class="tag ${p.income ? 'tg-in' : 'tg-auto'}">${p.income ? 'wpływ' : 'pobiera się samo'}</span></div><div class="when">${when}</div>
-          <div class="sub">${EV[p.every] || 'co ' + p.every + ' mies.'}${p.every === 12 ? ', ' + fmtDay(p.dueDate) : `, ${p.day}. dnia`}${last ? ' · ' + last : ''}${!p.income && p.perYear !== null && p.every < 12 ? ` · ${zlc(Math.round(p.perYear))} rocznie` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
-          <div class="act"><span class="amt">${p.toPay !== null ? (p.income ? '+' : '') + zlc(p.toPay) : '?'}</span>${p.amount === null && p.toPay !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
-      }
+      if (p.auto) return subRow(p);
       const when = p.state === 'paid' && p.paid ? `✓ ${p.paid.month.toLowerCase()} zapłacony; następny termin ${fmtDay(p.dueDate)}` : p.daysLeft < 0 ? `<b class="warn-txt">po terminie</b> (${fmtDay(p.dueDate)})` : `termin ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
       const pm = perMonth(p);
       return `<li class="pay st-${p.state}" data-fx="manual"><span class="stripe" aria-hidden="true"></span>
@@ -681,7 +694,10 @@ function startApp(initial) {
       ${list.length ? `<ul class="pay-list fx-list" data-fx-show="${F}">${list.map(row).join('')}</ul>` : ''}</section>`;
   }
 
-  /* ================= PLAN: drugi próg podatkowy ================= */
+  V.plan += dueH;
+
+  /* ================= drugi próg podatkowy (w zakładce Oszczędności) ================= */
+  let taxH = '';
   const T = D.tax;
   if (T) {
     const pct = Math.min(100, T.cumBase / T.threshold * 100);
@@ -694,7 +710,7 @@ function startApp(initial) {
     } else {
       msg = `W ${D.year} nie przekroczysz progu. Zapas: około <b class="num">${zl(T.threshold - T.cumBase)}</b> dochodu.`;
     }
-    V.plan += `<section class="panel tax" aria-labelledby="h-tax"><h2 id="h-tax">Drugi próg podatkowy</h2>
+    taxH = `<section class="panel tax" aria-labelledby="h-tax"><h2 id="h-tax">Drugi próg podatkowy</h2>
       <p class="desc">${T.source === 'payslip' ? 'Na podstawie kwoty z paska wpisanej w Ustawieniach.' : `Szacunek z wpływów netto przy pensji ${zl(T.grossA)} brutto. Dokładniej będzie po wpisaniu podstawy z paska w Ustawieniach.`}</p>
       <div class="row"><span>Dochód do opodatkowania od stycznia</span><b class="num">około ${fmtN(T.cumBase)} z ${fmtN(T.threshold)} zł</b></div>
       <div class="track"><span data-w="${pct}" style="background:${pct >= 100 ? 'var(--warning)' : 'var(--income)'}"></span></div>
@@ -725,8 +741,8 @@ function startApp(initial) {
         <div class="m-head"><h1 id="h-osz">Oszczędności</h1><span>${AC.lastUpdate ? 'salda z ' + dayOf(AC.lastUpdate) : 'brak sald'}</span></div>
         <p class="m-label">${has ? (estDiff ? 'Na kontach jest teraz około' : 'Na wszystkich kontach') : 'Wpisz salda swoich kont'}</p>
         <p class="m-big num">${has ? zl(AC.totalEst) : '—'}</p>
-        ${has ? `<div class="osz-bar" role="img" aria-label="Podział na rodzaje kont">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + Math.max(0, a.est), 0); return v > 0 ? `<span style="flex-basis:${(v / Math.max(1, AC.totalEst) * 100).toFixed(2)}%;background:${KIND_COL[k]}" title="${k}: ${zl(v)}"></span>` : ''; }).join('')}</div>
-        <div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span><i style="background:${KIND_COL[k]}"></i>${k} <b class="num">${zl(v)}</b></span>` : ''; }).join('')}</div>` : ''}
+        ${has ? `<div class="osz-bar" role="img" aria-label="Podział na konta">${known.filter(a => a.est > 0).map(a => `<span data-acc-bar="${esc(a.name)}" style="flex-basis:${(a.est / Math.max(1, AC.totalEst) * 100).toFixed(2)}%;background:${accColor(a.name)}" title="${esc(a.name)}: ${zl(a.est)}"></span>`).join('')}</div>
+        <div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span>${k} <b class="num">${zl(v)}</b></span>` : ''; }).join('<span class="sep">·</span>')}</div>` : ''}
         ${AC.change ? `<p class="osz-change">Od ${dayOf(AC.change.since)}: <b class="num ${AC.change.amount < 0 ? 'neg' : 'pos'}">${AC.change.amount >= 0 ? '+' : ''}${zl(AC.change.amount)}</b></p>` : ''}
         <div class="osz-acts"><button type="button" class="pay-btn" data-acc-update>Aktualizuj salda</button><button type="button" class="pay-btn ghost" data-acc-transfer${has ? '' : ' disabled'}>Przelew między kontami</button></div>
         ${AC.daysSinceUpdate !== null && AC.daysSinceUpdate > 31 ? `<p class="warn-line osz-stale">Salda mają ${AC.daysSinceUpdate} dni. Wpisz aktualne z aplikacji banku, żeby prognoza startowała z prawdziwej kwoty.</p>` : ''}
@@ -747,9 +763,10 @@ function startApp(initial) {
         }
       }
 
+      O += '%%PROGNOZA%%';   // prognoza stoi zaraz pod sumą, przed listą kont
       // lista kont
       const accRow = a => `<li class="acc">
-        <span class="acc-dot" style="background:${KIND_COL[a.kind] || KIND_COL.inne}"></span>
+        <label class="acc-dot" style="background:${accColor(a.name)}" title="Zmień kolor"><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></label>
         <div class="acc-b"><div class="nm">${esc(a.name)}${a.role ? ` <span class="tag tg-role">${esc(a.role)}</span>` : ''}</div>
           <div class="sub">${[a.bank, a.kind].filter(Boolean).map(esc).join(' · ')}${a.balance !== null ? ` · saldo z ${dayOf(a.asOf)}${a.est !== a.balance ? `: ${zl(a.balance)}` : ''}` : ' · brak salda'}</div>
           ${a.estNote ? `<div class="sub est">${esc(a.estNote)}</div>` : ''}
@@ -815,18 +832,26 @@ function startApp(initial) {
       O += `<div class="debt-add"><button type="button" class="btn-sm" data-debt-new>+ Dodaj pożyczkę albo raty</button></div>`;
     }
 
-    // ile będzie na kontach (prognoza)
+    // ile będzie na kontach: prognoza w czasie (konta + przyrost z budżetu), wariant dochodu, miesiąc po miesiącu
     if (D.savings && D.savings.points.length) {
       const S0 = D.savings, sv = savSeries();
       const debt = AC ? AC.loans.reduce((s2, l) => s2 + l.remaining, 0) : 0;
-      O += `<section class="panel" aria-labelledby="h-sav"><h2 id="h-sav">${sv.real ? 'Ile będzie na kontach' : 'Ile odłożysz'}</h2>
-        <p class="desc">${sv.real ? `Start: dzisiejsze ${zl(sv.base)} na kontach. Potem co miesiąc dochodzi to, co zostaje z budżetu (raty, terminy roczne i podatek już odjęte).${debt ? ' Pozioma linia to kwota do oddania.' : ''}` : `Ile przybędzie od ${esc(S0.fromLabel)}, jeśli odłożysz wszystko, co zostaje z każdego miesiąca. Uwzględnia raty, terminy roczne i podatek.`}</p>
+      const accs = sv.real ? chartAccounts() : [];
+      const FC = `<section class="panel sav-panel" aria-labelledby="h-sav"><div class="panel-head"><div><h2 id="h-sav">${sv.real ? 'Ile będzie na kontach' : 'Ile odłożysz'}</h2>
+        <p class="desc">${sv.real ? `Start: dzisiejsze ${zl(sv.base)} na kontach, potem co miesiąc to, co zostaje z budżetu.` : `Ile przybędzie od ${esc(S0.fromLabel)}, jeśli odłożysz wszystko, co zostaje z każdego miesiąca.`}</p></div></div>
+        <div class="var-row">${varSeg}<span>${varDesc}</span></div>
+        ${varFigs}
         <div class="sav-points">${S0.points.map(pt => { const x = sv.S.find(y => y.ymi === pt.ymi) || pt; return `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">${sv.real ? '' : '+'}${zlR(x.cumA, x.cumB)}</b><small>${pt.quarter}</small></div>`; }).join('')}</div>
-        <div class="sav-chart" id="savChart"></div>
-        <div class="legend"><span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span><span style="color:var(--muted)">Dotknij wykresu, żeby zobaczyć miesiąc.</span></div>
-        <p class="total">Nie uwzględnia wakacji ani większych jednorazowych zakupów. Dodaj je w zakładce Terminy w arkuszu, a prognoza je odejmie.</p>
+        <div class="sav-chart${sv.real ? ' stacked' : ''}" id="savChart"></div>
+        <div class="legend sav-legend">${accs.map(a => `<label class="acc-sw"><i style="background:${accColor(a.name)}"><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></i>${esc(a.name)}</label>`).join('')}
+          ${sv.real ? '<span><i class="sw" style="background:var(--left);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
+        <p class="total">${sv.real ? 'Kolorowe pola to Twoje konta (wcześniejsze miesiące według wpisanych sald, dalej dzisiejsze salda). Dotknij koloru w legendzie, żeby go zmienić. ' : ''}Dotknij wykresu, żeby zobaczyć miesiąc. Nie uwzględnia wakacji ani większych jednorazowych zakupów: dodaj je w zakładce Terminy w arkuszu.</p>
+        ${fcTable ? `<details class="paid-more fc-more" data-keep="fc"${OPEN_CATS.has('fc') ? ' open' : ''}><summary><span>Miesiąc po miesiącu</span><span class="chev" aria-hidden="true">▶</span></summary><div class="fc-wrap">${fcTable}</div></details>` : ''}
       </section>`;
+      O = O.indexOf('%%PROGNOZA%%') >= 0 ? O.replace('%%PROGNOZA%%', FC) : O + FC;
     }
+    O = O.replace('%%PROGNOZA%%', '');
+    O += taxH;
 
     // historia operacji
     if (AC && AC.ops.length) {
@@ -847,7 +872,7 @@ function startApp(initial) {
       <li>Główny klucz służy tylko do połączenia pierwszego urządzenia. Nowy tworzysz w Apps Script funkcją utworzKlucz.</li>
       <li>Awaryjnie funkcja odlaczWszystkieUrzadzenia w Apps Script odłącza wszystkie urządzenia naraz.</li>
     </ul><p class="total">Aplikacja v${CLIENT_VERSION}${D.version ? `, skrypt v${esc(D.version)}` : ''}.${D.sheetUrl ? ` <a href="${esc(D.sheetUrl)}" target="_blank" rel="noopener">Otwórz arkusz</a>` : ''}</p></section>`;
-  V.plan += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && D.version !== CLIENT_VERSION ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
+  V.oszczednosci += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && D.version !== CLIENT_VERSION ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
 
   document.getElementById('app').innerHTML = Object.keys(V).map(k => `<div class="view" data-tabview="${k}"${k === TAB ? '' : ' hidden'}>${V[k]}</div>`).join('');
 
@@ -1613,10 +1638,106 @@ function startApp(initial) {
       .concat(S0.map(x => Object.assign({}, x, { cumA: Math.round(base + x.cumA - done), cumB: Math.round(base + x.cumB - done) })));
     return { S, real: true, base };
   }
+  // konta na wykresie: widoczne, z saldem; konto oszczędności na dole, dalej od największego
+  function chartAccounts() {
+    const AC = D.accounts; if (!AC) return [];
+    const hist = AC.history || [];
+    return AC.list.filter(a => a.show && a.balance !== null && (a.est > 0 || hist.some(h => (h.balances[a.name] || 0) > 0)))
+      .sort((a, b) => (b.role === 'oszczędności') - (a.role === 'oszczędności') || (b.est || 0) - (a.est || 0));
+  }
+  function drawStacked(box, SV) {
+    const AC = D.accounts, accs = chartAccounts();
+    const pts = [];
+    (AC.history || []).forEach(h => { const [y, m] = h.ym.split('-').map(Number); const vals = accs.map(a => Math.max(0, h.balances[a.name] || 0)); pts.push({ kind: 'past', ymi: y * 12 + m - 1, label: MONTHS_SHORT[m - 1] + " '" + String(y).slice(2), vals, tA: vals.reduce((p, v) => p + v, 0), tB: null, items: [] }); });
+    const estV = accs.map(a => Math.max(0, a.est || 0));
+    SV.S.forEach((x, i) => pts.push(i === 0 ? { kind: 'now', ymi: -1, label: 'dziś', vals: estV, tA: SV.base, tB: SV.base, items: [] }
+      : { kind: 'fc', ymi: x.ymi, label: x.label.replace(' 20', " '"), vals: estV, tA: x.cumA, tB: x.cumB, items: x.items || [], x }));
+    const n = pts.length - 1, now = pts.findIndex(p => p.kind === 'now');
+    if (n < 1) { box.innerHTML = ''; return; }
+    const debt = AC.loans.reduce((s2, l) => s2 + l.remaining, 0);
+    const W = box.clientWidth, H = box.clientHeight, pad = { l: 46, r: 16, t: 22, b: 26 };
+    const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
+    const sumV = p => p.vals.reduce((a, v) => a + v, 0);
+    const maxV = Math.max(1, debt, ...pts.map(p => Math.max(sumV(p), p.tA || 0, p.tB || 0)));
+    const minV = Math.min(0, ...pts.map(p => Math.min(p.tA || 0, p.tB === null ? 0 : p.tB)));
+    const stepV = maxV > 80000 ? 20000 : maxV > 40000 ? 10000 : 5000;
+    const top = Math.ceil(maxV * 1.08 / stepV) * stepV, bot = Math.floor(minV / stepV) * stepV;
+    const X = i => pad.l + iw * i / n, Y = v => pad.t + ih - ((v - bot) / (top - bot)) * ih;
+    let grid = '';
+    for (let v = bot; v <= top; v += stepV) grid += `<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}" stroke="var(--grid)"/><text x="${pad.l - 8}" y="${f1(Y(v) + 4)}" text-anchor="end" fill="var(--muted)" font-size="12">${v ? Math.round(v / 1000) + ' tys.' : '0'}</text>`;
+    // pola kont (od dołu), liniowo między miesiącami
+    const lower = pts.map(() => 0);
+    let bands = '';
+    accs.forEach((a, k) => {
+      const lo = lower.slice(), hi = pts.map((p, i) => lo[i] + p.vals[k]);
+      hi.forEach((v, i) => { lower[i] = v; });
+      const d = 'M' + hi.map((v, i) => f1(X(i)) + ',' + f1(Y(v))).join('L') + 'L' + lo.map((v, i) => [i, v]).reverse().map(([i, v]) => f1(X(i)) + ',' + f1(Y(v))).join('L') + 'Z';
+      bands += `<path d="${d}" fill="${accColor(a.name)}" opacity=".88" data-band="${esc(a.name)}"><title>${esc(a.name)}</title></path>`;
+    });
+    // przyrost z budżetu (prognoza, wybrany wariant) ponad dzisiejszymi saldami
+    const key = VARIANT === 'B' ? 'tB' : 'tA';
+    const fcIdx = pts.map((p, i) => i).filter(i => i >= now);
+    const growTop = i => Math.max(lower[i], pts[i][key]);
+    const grow = fcIdx.length > 1 ? `<path d="M${fcIdx.map(i => f1(X(i)) + ',' + f1(Y(growTop(i)))).join('L')}L${fcIdx.slice().reverse().map(i => f1(X(i)) + ',' + f1(Y(lower[i]))).join('L')}Z" fill="var(--left)" opacity=".32"/>` : '';
+    const lineA = 'M' + pts.map((p, i) => f1(X(i)) + ',' + f1(Y(p.tA))).join('L');
+    const lineB = fcIdx.length > 1 ? 'M' + fcIdx.map(i => f1(X(i)) + ',' + f1(Y(pts[i].tB))).join('L') : '';
+    const cps = D.savings.points.map(pt => pts.findIndex(p => p.ymi === pt.ymi)).filter(i => i >= 0);
+    const LX = i => Math.min(Math.max(X(i), pad.l + 14), W - pad.r - 14);
+    const keep = new Set();
+    keep.add(now);
+    [0, ...cps].filter((v, k, a) => v >= 0 && v !== now && a.indexOf(v) === k).forEach(i => { if ([...keep].every(j => Math.abs(LX(j) - LX(i)) >= 50)) keep.add(i); });
+    const xl = pts.map((p, i) => keep.has(i) ? `<text x="${f1(LX(i))}" y="${H - 6}" text-anchor="middle" fill="${i === now ? 'var(--text)' : 'var(--muted)'}" font-size="12"${i === now ? ' font-weight="700"' : ''}>${p.label}</text>` : '').join('');
+    const ev = pts.map((p, i) => p.items.filter(t => /OC\/AC|próg|Przegląd/.test(t)).length ? `<circle cx="${f1(X(i))}" cy="${pad.t - 8}" r="3.5" fill="var(--warning)"><title>${esc(p.label + ': ' + p.items.join(', '))}</title></circle>` : '').join('');
+    box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Salda kont i prognoza do końca ${D.year + 1}">
+      ${grid}${bands}${grow}
+      ${now > 0 ? `<line x1="${f1(X(now))}" x2="${f1(X(now))}" y1="${pad.t}" y2="${pad.t + ih}" stroke="var(--text-2)" stroke-dasharray="2 4" opacity=".6"/>` : ''}
+      ${lineB ? `<path d="${lineB}" fill="none" stroke="var(--left)" stroke-width="1.6" stroke-dasharray="3 5"/>` : ''}
+      <path d="${lineA}" fill="none" stroke="var(--left)" stroke-width="2.4"/>
+      ${cps.map(i => `<circle cx="${f1(X(i))}" cy="${f1(Y(pts[i].tA))}" r="4" fill="var(--left)" stroke="var(--surface)" stroke-width="2"/>`).join('')}
+      ${debt ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(debt))}" y2="${f1(Y(debt))}" stroke="var(--warning)" stroke-width="1.6" stroke-dasharray="6 4" opacity=".85"/><text x="${W - pad.r}" y="${f1(Y(debt) - 6)}" text-anchor="end" fill="var(--warning)" font-size="12">do oddania ${Math.round(debt / 1000)} tys.</text>` : ''}
+      ${xl}${ev}
+      <g id="savHv" style="display:none" pointer-events="none"><line id="savHvL" y1="${pad.t}" y2="${pad.t + ih}" stroke="var(--text-2)" stroke-opacity=".5"/><circle id="savHvA" r="5" fill="var(--left)" stroke="var(--surface)" stroke-width="2"/></g>
+      <rect id="savHit" x="${pad.l - 10}" y="0" width="${iw + 20}" height="${H}" fill="transparent" style="cursor:crosshair"/>
+    </svg><div class="tip" id="savTip" role="status"></div>`;
+    const hit = box.querySelector('#savHit'), hv = box.querySelector('#savHv'), tip = box.querySelector('#savTip');
+    const at = cx => Math.max(0, Math.min(n, Math.round((cx - box.getBoundingClientRect().left - pad.l) / (iw / n))));
+    const curYmi = D.year * 12 + D.currentMonth;
+    let pinned = null;
+    const show = i => {
+      const p = pts[i];
+      hv.style.display = '';
+      box.querySelector('#savHvL').setAttribute('x1', X(i)); box.querySelector('#savHvL').setAttribute('x2', X(i));
+      box.querySelector('#savHvA').setAttribute('cx', X(i)); box.querySelector('#savHvA').setAttribute('cy', Y(p.tA));
+      const accRows = accs.map((a, k) => p.vals[k] ? `<div class="r"><span><i class="tdot" style="background:${accColor(a.name)}"></i>${esc(a.name)}</span><span class="num">${zl(p.vals[k])}</span></div>` : '').join('');
+      tip.innerHTML = p.kind === 'fc'
+        ? `<div class="t">${esc(D.monthNames[p.ymi % 12] + ' ' + Math.floor(p.ymi / 12))}${p.ymi === curYmi ? ' <em>w trakcie</em>' : ''}</div>
+          <div class="r"><span>Dochód</span><span class="num">${zlR(p.x.incomeA, p.x.incomeB)}</span></div>
+          <div class="r"><span>Wydatki</span><span class="num">${zl(p.x.expenses)}</span></div>
+          <div class="r"><span>W tym miesiącu</span><span class="num">${zlR(p.x.leftA, p.x.leftB)}</span></div>
+          <div class="r sum"><span>Na kontach</span><span class="num">${zlR(p.tA, p.tB)}</span></div>${p.items.map(t => `<div class="ev">${esc(t)}</div>`).join('')}`
+        : `<div class="t">${p.kind === 'now' ? 'Dziś' : 'Koniec: ' + esc(D.monthNames[p.ymi % 12].toLowerCase() + ' ' + Math.floor(p.ymi / 12))}</div>${accRows}<div class="r sum"><span>Razem</span><span class="num">${zl(p.tA)}</span></div>`;
+      const tw = tip.offsetWidth;
+      tip.style.left = Math.max(4, Math.min(W - tw - 4, X(i) + (X(i) > W / 2 ? -tw - 14 : 14))) + 'px';
+      tip.classList.add('on');
+    };
+    const hide = () => { hv.style.display = 'none'; tip.classList.remove('on'); pinned = null; };
+    hit.addEventListener('pointermove', e => { if (e.pointerType === 'mouse' || pinned !== null) show(pinned = at(e.clientX)); });
+    hit.addEventListener('pointerdown', e => { const i = at(e.clientX); if (e.pointerType !== 'mouse' && pinned === i) { hide(); return; } show(pinned = i); });
+    hit.addEventListener('touchmove', e => show(pinned = at(e.touches[0].clientX)), { passive: true });
+    hit.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
+    box._hide = hide;
+    box._show = ymi => { const i = pts.findIndex(p => p.ymi === ymi); if (i >= 0) show(pinned = i); };
+    if (!window.__savOutside) {
+      window.__savOutside = true;
+      document.addEventListener('pointerdown', e => { const c = document.getElementById('savChart'); if (c && c._hide && !e.target.closest('#savChart')) c._hide(); });
+    }
+  }
   function drawSavings() {
     const box = document.getElementById('savChart');
     if (!box || !box.clientWidth || !D.savings) return;
-    const SV = savSeries(), S = SV.S, n = S.length - 1;
+    const SV = savSeries();
+    if (SV.real) { drawStacked(box, SV); return; }
+    const S = SV.S, n = S.length - 1;
     const debt = SV.real && D.accounts ? D.accounts.loans.reduce((s2, l) => s2 + l.remaining, 0) : 0;
     if (n < 1) { box.innerHTML = ''; return; }
     const W = box.clientWidth, H = box.clientHeight;
@@ -1794,6 +1915,32 @@ function startApp(initial) {
   });
 
 
+  /* ================= kolory kont: podgląd na żywo, zapis po wyborze ================= */
+  function paintAcc(name) {
+    const c = accColor(name);
+    document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) { inp.value = c; const host = inp.closest('.acc-dot, i'); if (host) host.style.background = c; } });
+    document.querySelectorAll('[data-acc-bar]').forEach(el => { if (el.dataset.accBar === name) el.style.background = c; });
+    document.querySelectorAll('#savChart [data-band]').forEach(el => { if (el.dataset.band === name) el.setAttribute('fill', c); });
+  }
+  document.addEventListener('input', e => {
+    const n = e.target.dataset && e.target.dataset.accColor;
+    if (!n) return;
+    ACC_PREVIEW[n] = e.target.value; paintAcc(n);
+  });
+  document.addEventListener('change', async e => {
+    const n = e.target.dataset && e.target.dataset.accColor;
+    if (!n) return;
+    const v = e.target.value;
+    ACC_PREVIEW[n] = v; paintAcc(n);
+    try {
+      const r = await call('saveAccountColors', { colors: { [n]: v } });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'Nie udało się zapisać.');
+      delete ACC_PREVIEW[n];
+      applyModel(r.model);
+      toast('Kolor „' + esc(n) + '” zapisany.');
+    } catch (err) { toast('Nie udało się zapisać koloru: ' + esc(err.message || err)); }
+  });
+
   /* ================= stałe opłaty: filtr ================= */
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-fx-f]');
@@ -1880,9 +2027,10 @@ function startApp(initial) {
       <label class="field"><span>Rodzaj</span><select id="acKind">${KINDS.map(k => `<option${a && a.kind === k ? ' selected' : ''}>${k}</option>`).join('')}</select></label></div>
       <label class="field"><span>Rola</span><select id="acRole">${ROLES.map(([v, t]) => `<option value="${v}"${a && a.role === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <p class="hint-avg">„Tu wpływa pensja” i „na wydatki” służą podpowiedzi, ile przelać na konto do wydatków. Każdą z tych ról ma jedno konto.</p>
+      <label class="field acc-color"><span>Kolor na wykresie</span><input type="color" id="acColor" value="${a ? accColor(a.name) : ACC_PAL[(AC.list.length) % ACC_PAL.length]}"></label>
       <label class="check"><input type="checkbox" id="acShow"${!a || a.show ? ' checked' : ''}><span>Pokazuj na liście kont</span></label>`,
       a ? 'Zapisz zmiany' : 'Dodaj konto', async () => {
-        await accCall('saveAccount', { row: a ? a.row : null, originalName: a ? a.name : '', name: val('acName'), bank: val('acBank'), kind: val('acKind'), role: $('acRole').value, show: $('acShow').checked });
+        await accCall('saveAccount', { row: a ? a.row : null, originalName: a ? a.name : '', name: val('acName'), bank: val('acBank'), kind: val('acKind'), role: $('acRole').value, show: $('acShow').checked, color: $('acColor').value });
         return a ? 'Zapisano zmiany konta.' : 'Dodano konto „' + esc(val('acName')) + '”. Wpisz jego saldo w „Aktualizuj salda”.';
       });
   }

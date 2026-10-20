@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '15',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '16',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -88,7 +88,7 @@ function doPost(e) {
       confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
       editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders, subAnswer: subAnswer,
       saveBalances: saveBalances, transferBetween: transferBetween, repayLoan: repayLoan, undoAccountOp: undoAccountOp, saveAccount: saveAccount,
-      saveDebt: saveDebt, deleteDebt: deleteDebt,
+      saveDebt: saveDebt, deleteDebt: deleteDebt, saveAccountColors: saveAccountColors,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -1897,7 +1897,7 @@ function syncReminders_(force) {
  *  aktualizacja (wpisane z banku), przelew (dwa wiersze: z konta i na konto), spłata pożyczki (wiersz z nazwą pożyczki).
  * Bieżące saldo konta = ostatni niecofnięty wiersz. Przelewy między własnymi kontami nie zmieniają sumy.
  */
-const ACC_HEADER = ['Nazwa', 'Bank', 'Rodzaj', 'Rola', 'Pokazuj', 'Uwagi'];
+const ACC_HEADER = ['Nazwa', 'Bank', 'Rodzaj', 'Rola', 'Pokazuj', 'Uwagi', 'Kolor'];
 const LOAN_HEADER = ['Nazwa', 'Kwota (zł)', 'Od kogo', 'Od (data)', 'Uwagi'];
 const BAL_HEADER = ['ID', 'Data', 'Konto', 'Saldo po', 'Zmiana', 'Rodzaj', 'Opis', 'Pożyczka', 'Status'];
 const ACC_KINDS = ['bieżące', 'oszczędnościowe', 'walutowe', 'gotówka', 'inne'];
@@ -1918,7 +1918,8 @@ function parseAccounts_(v) {
     if (section === 'acc') {
       const role = String(v[r][3] || '').trim().toLowerCase();
       out.accounts.push({ row: r + 1, name: name, bank: String(v[r][1] || '').trim(), kind: String(v[r][2] || '').trim().toLowerCase() || 'inne',
-        role: ACC_ROLES.indexOf(role) >= 0 ? role : '', show: !/^(NIE|N|NO|FALSE)$/i.test(String(v[r][4] || '').trim()), note: String(v[r][5] || '').trim() });
+        role: ACC_ROLES.indexOf(role) >= 0 ? role : '', show: !/^(NIE|N|NO|FALSE)$/i.test(String(v[r][4] || '').trim()), note: String(v[r][5] || '').trim(),
+        color: /^#[0-9a-f]{6}$/i.test(String(v[r][6] || '').trim()) ? String(v[r][6]).trim().toLowerCase() : '' });
     } else if (section === 'loan') {
       const amount = toNum_(v[r][1]);
       if (amount === null) continue;
@@ -1983,7 +1984,7 @@ function accountsModel_(ss, model) {
     let est = c ? c.balance : null, estNote = '';
     if (c && a.role === 'na co dzień') { const sp = sinceSum(c.at, 'wydatek'); if (sp) { est = r2_(est - sp); estNote = 'po wydatkach dodanych od tego czasu: ' + fmtPl_(sp) + ' zł'; } }
     if (c && a.role === 'wpływy') { const inc = sinceSum(c.at, 'wpływ'); if (inc) { est = r2_(est + inc); estNote = 'po wpływach dodanych od tego czasu: ' + fmtPl_(inc) + ' zł'; } }
-    return { row: a.row, name: a.name, bank: a.bank, kind: a.kind, role: a.role, show: a.show, note: a.note,
+    return { row: a.row, name: a.name, bank: a.bank, kind: a.kind, role: a.role, show: a.show, note: a.note, color: a.color,
       balance: c ? r2_(c.balance) : null, asOf: c ? iso(c.at) : null, est: est === null ? null : r2_(est), estNote: estNote };
   });
   const known = list.filter(function (a) { return a.balance !== null; });
@@ -2014,6 +2015,18 @@ function accountsModel_(ss, model) {
       paid: paid, remaining: r2_(Math.max(0, l.amount - paid)),
       history: pays.slice(-12).reverse().map(function (x) { return { id: x.id, at: iso(x.at), amount: r2_(-(x.change || 0)), account: x.account, desc: x.desc }; }) };
   });
+  // historia: saldo każdego konta na koniec poprzednich miesięcy (do wykresu w czasie, najwyżej 12 miesięcy wstecz)
+  const history = [];
+  const firstAt = log.filter(function (x) { return !x.undone && x.at; }).reduce(function (m, x) { return !m || x.at < m ? x.at : m; }, null);
+  if (firstAt) {
+    const nowYmi = now.getFullYear() * 12 + now.getMonth();
+    for (let y = Math.max(firstAt.getFullYear() * 12 + firstAt.getMonth(), nowYmi - 12); y < nowYmi; y++) {
+      const end = new Date(Math.floor(y / 12), y % 12 + 1, 1);
+      const bal = {};
+      log.forEach(function (x) { if (!x.undone && x.at && x.at < end) bal[x.account] = r2_(x.balance); });
+      if (Object.keys(bal).length) history.push({ ym: Math.floor(y / 12) + '-' + ('0' + (y % 12 + 1)).slice(-2), balances: bal });
+    }
+  }
   // raty: spłacone = stan z zakładki Konta + kolejne zapłacone terminy podpiętej płatności (zapłacona część = cała rata)
   const installments = A.installments.map(function (x) {
     const rate = r2_(x.amount / x.count);
@@ -2045,7 +2058,7 @@ function accountsModel_(ss, model) {
   return {
     list: list, total: total, totalEst: totalEst, lastUpdate: iso(lastAt),
     daysSinceUpdate: lastAt ? Math.floor((now - lastAt) / 864e5) : null,
-    change: change, loans: loans, installments: installments, ops: ops, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
+    change: change, loans: loans, installments: installments, ops: ops, history: history, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
   };
 }
 
@@ -2152,6 +2165,7 @@ function saveAccount(arg) {
     if (!name) throw new Error('Nadaj kontu nazwę.');
     const kind = ACC_KINDS.indexOf(a.kind) >= 0 ? a.kind : 'inne', role = ACC_ROLES.indexOf(a.role) >= 0 ? a.role : '';
     const row = [name, cleanText_(a.bank, 30), kind, role, a.show === false ? 'NIE' : 'TAK'];
+    const color = /^#[0-9a-f]{6}$/i.test(String(a.color || '')) ? String(a.color).toLowerCase() : null;
     // jedna rola „wpływy” i jedna „na co dzień”: nowa przejmuje rolę od poprzedniego konta
     const clearRole = function () { if (role === 'wpływy' || role === 'na co dzień') A.accounts.forEach(function (x) { if (x.role === role && x.row !== a.row) sh.getRange(x.row, 4).setValue(''); }); };
     if (a.row) {
@@ -2163,6 +2177,7 @@ function saveAccount(arg) {
         if (bs && bs.getLastRow() > 1) { const v = bs.getRange(2, 3, bs.getLastRow() - 1, 1).getValues(); v.forEach(function (r, i) { if (String(r[0]).trim() === cur.name) bs.getRange(i + 2, 3).setValue(name); }); }
       }
       sh.getRange(a.row, 1, 1, 5).setValues([row]);
+      if (color) sh.getRange(a.row, 7).setValue(color);
       clearRole();
       return { account: name };
     }
@@ -2172,11 +2187,30 @@ function saveAccount(arg) {
     const last = A.accounts.length ? Math.max.apply(null, A.accounts.map(function (x) { return x.row; })) : header + 1;
     sh.insertRowAfter(last);
     sh.getRange(last + 1, 1, 1, 5).setValues([row]);
+    if (color) sh.getRange(last + 1, 7).setValue(color);
     clearRole();
     return { account: name };
   });
 }
 
+
+/** Kolory kont na wykresie: { colors: { 'Nazwa konta': '#rrggbb' | '' } } – kolumna „Kolor” w zakładce Konta. */
+function saveAccountColors(arg) {
+  return withLock_(function (ss) {
+    const sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    if (!sh) throw new Error('Brak zakładki „' + CFG.ACCOUNTS_SHEET + '”.');
+    const A = parseAccounts_(sh.getDataRange().getValues()), c = (arg && arg.colors) || {};
+    if (A.sectionRows.acc && isEmpty_(sh.getRange(A.sectionRows.acc + 1, 7).getValue())) sh.getRange(A.sectionRows.acc + 1, 7).setValue('Kolor');
+    Object.keys(c).forEach(function (n) {
+      const a = A.accounts.filter(function (x) { return x.name === n; })[0];
+      if (!a) return;
+      const v = String(c[n] || '');
+      if (v && !/^#[0-9a-f]{6}$/i.test(v)) throw new Error('Niepoprawny kolor dla „' + n + '”.');
+      sh.getRange(a.row, 7).setValue(v.toLowerCase());
+    });
+    return {};
+  });
+}
 
 const INST_HEADER = ['Nazwa', 'Kwota łącznie (zł)', 'Liczba rat', 'Moja część (%)', 'Płatność w aplikacji', 'Spłacone rat', 'Stan na (RRRR-MM)', 'Uwagi'];
 
