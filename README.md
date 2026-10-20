@@ -32,4 +32,6 @@ Nowy klucz (`utworzKlucz`) od razu unieważnia stary. Już połączone urządzen
 
 **Subskrypcje:** płatność z zaznaczonym „Pobiera się samo” (kolumna K w tabeli płatności) nie wymaga przycisku „Zapłać”. W dniu pobrania aplikacja pyta „Pobrało się?” i po odpowiedzi „Tak” wpisuje kwotę do arkusza.
 
+**Oszczędności:** zakładka z kontami (salda wpisywane z banku, historia w zakładce „Historia kont”), przelewami między własnymi kontami, pożyczkami ze spłatami i prognozą stanu kont. Konta i pożyczki są w zakładce arkusza „Konta”.
+
 **Przypomnienia:** po włączeniu w Ustawieniach skrypt prowadzi kalendarz Google „Finanse – płatności” z terminami płatności. Za pierwszym razem uruchom w Apps Script funkcję `wlaczPrzypomnienia`, żeby nadać dostęp do Kalendarza.

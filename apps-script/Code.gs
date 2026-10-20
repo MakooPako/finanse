@@ -18,11 +18,13 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '13',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '14',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
   DEVICES_SHEET: 'Urządzenia',
+  ACCOUNTS_SHEET: 'Konta',
+  BALANCES_SHEET: 'Historia kont',
   LOG_HEADER: ['ID', 'Dodano', 'Data zakupu', 'Typ', 'Kategoria', 'Kwota', 'Opis',
     'Niezapłacone', 'Komórka', 'Było', 'Jest', 'Status', 'Z nadpłaty', 'Płatność', 'Zmiana w komórce'],
   LOG_MAX: 1500,           // tyle ostatnich wpisów (z bieżącego i poprzedniego roku) trafia do aplikacji – do wyszukiwania i edycji
@@ -85,6 +87,7 @@ function doPost(e) {
       renameDevice: function (arg) { return withDevices_(who, renameDevice_(arg)); },
       confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
       editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders, subAnswer: subAnswer,
+      saveBalances: saveBalances, transferBetween: transferBetween, repayLoan: repayLoan, undoAccountOp: undoAccountOp, saveAccount: saveAccount,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -346,6 +349,7 @@ function getDashboardData() {
   model.sheetUrl = ss.getUrl();
   model.version = CFG.VERSION;
   model.prefs = { colors: readPrefs_('UI_COLORS', {}), reminders: remindersInfo_() };
+  try { model.accounts = accountsModel_(ss, model); } catch (e) { model.accounts = null; model.warnings.push('Konta: ' + e.message); }
   try {
     const tz = Session.getScriptTimeZone();
     if (tz && tz !== 'Europe/Warsaw') model.warnings.push('Strefa czasowa skryptu to ' + tz + '. Ustaw Europe/Warsaw (Apps Script → Ustawienia projektu), żeby terminy liczyły się co do dnia.');
@@ -879,6 +883,7 @@ function buildModel_(ctx) {
     savings = {
       fromLabel: '1 ' + ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'][forecast[0].m] + ' ' + forecast[0].y,
       series: series,
+      realized: curIdx >= 0 && curIdx < 12 ? r2_(months[curIdx].income - months[curIdx].expenses) : 0,   // to, co z bieżącego miesiąca już jest na kontach
       points: checkpoints.map(function (c) {
         const s = series.filter(function (x) { return x.ymi === c; })[0];
         if (!s) return null;
@@ -1875,6 +1880,266 @@ function syncReminders_(force) {
   const x = remindersPrefs_();
   x.lastSync = now.toISOString(); x.error = null; x.count = Object.keys(want).length;
   storeReminders_(x);
+}
+
+
+/* ============================ KONTA I OSZCZĘDNOŚCI (v14) ============================ */
+/*
+ * Zakładka „Konta”: lista kont (KONTA) i pożyczek (POŻYCZKI) – edytowalna także ręcznie.
+ * Zakładka „Historia kont”: dziennik zmian sald (tylko dopisywanie). Każdy wiersz to saldo jednego konta po operacji:
+ *  aktualizacja (wpisane z banku), przelew (dwa wiersze: z konta i na konto), spłata pożyczki (wiersz z nazwą pożyczki).
+ * Bieżące saldo konta = ostatni niecofnięty wiersz. Przelewy między własnymi kontami nie zmieniają sumy.
+ */
+const ACC_HEADER = ['Nazwa', 'Bank', 'Rodzaj', 'Rola', 'Pokazuj', 'Uwagi'];
+const LOAN_HEADER = ['Nazwa', 'Kwota (zł)', 'Od kogo', 'Od (data)', 'Uwagi'];
+const BAL_HEADER = ['ID', 'Data', 'Konto', 'Saldo po', 'Zmiana', 'Rodzaj', 'Opis', 'Pożyczka', 'Status'];
+const ACC_KINDS = ['bieżące', 'oszczędnościowe', 'walutowe', 'gotówka', 'inne'];
+const ACC_ROLES = ['wpływy', 'na co dzień', 'oszczędności', ''];
+
+function parseAccounts_(v) {
+  const out = { accounts: [], loans: [], sectionRows: {} };
+  if (!v) return out;
+  let section = null;
+  for (let r = 0; r < v.length; r++) {
+    const a = norm_(v[r][0]);
+    if (!a) continue;
+    if (a === 'KONTA') { section = 'acc'; out.sectionRows.acc = r + 1; continue; }
+    if (a === 'POŻYCZKI') { section = 'loan'; out.sectionRows.loan = r + 1; continue; }
+    if (a === 'NAZWA') continue;
+    const name = String(v[r][0]).trim();
+    if (section === 'acc') {
+      const role = String(v[r][3] || '').trim().toLowerCase();
+      out.accounts.push({ row: r + 1, name: name, bank: String(v[r][1] || '').trim(), kind: String(v[r][2] || '').trim().toLowerCase() || 'inne',
+        role: ACC_ROLES.indexOf(role) >= 0 ? role : '', show: !/^(NIE|N|NO|FALSE)$/i.test(String(v[r][4] || '').trim()), note: String(v[r][5] || '').trim() });
+    } else if (section === 'loan') {
+      const amount = toNum_(v[r][1]);
+      if (amount === null) continue;
+      out.loans.push({ row: r + 1, name: name, amount: amount, lender: String(v[r][2] || '').trim(), since: parseDate_(v[r][3]), note: String(v[r][4] || '').trim() });
+    }
+  }
+  return out;
+}
+
+function balancesSheet_(ss) {
+  let sh = ss.getSheetByName(CFG.BALANCES_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(CFG.BALANCES_SHEET);
+    sh.getRange(1, 1, 1, BAL_HEADER.length).setValues([BAL_HEADER]);
+    try { sh.setFrozenRows(1); sh.getRange(1, 1, 1, BAL_HEADER.length).setFontWeight('bold'); sh.getRange('B:B').setNumberFormat('yyyy-mm-dd hh:mm'); } catch (e) { /* opcjonalne */ }
+  }
+  return sh;
+}
+
+function readBalanceLog_(ss) {
+  const sh = ss.getSheetByName(CFG.BALANCES_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getDataRange().getValues().slice(1).map(function (r, i) {
+    const at = isDate_(r[1]) ? r[1] : typeof r[1] === 'number' ? new Date(new Date(1899, 11, 30).getTime() + Math.round(r[1] * 864e5)) : parseDate_(r[1]);   // liczba = data seryjna arkusza
+    return { r: i + 2, id: String(r[0]), at: at, account: String(r[2] || '').trim(), balance: toNum_(r[3]),
+      change: toNum_(r[4]), kind: String(r[5] || '').trim(), desc: String(r[6] || ''), loan: String(r[7] || '').trim(), undone: /cofni/i.test(String(r[8] || '')) };
+  }).filter(function (x) { return x.id && x.account && x.balance !== null; });
+}
+
+/** Bieżące salda: ostatni niecofnięty wiersz każdego konta. */
+function currentBalances_(log) {
+  const cur = {};
+  log.forEach(function (x) { if (!x.undone) cur[x.account] = x; });
+  return cur;
+}
+
+function accountsModel_(ss, model) {
+  const sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+  if (!sh) return null;
+  const A = parseAccounts_(sh.getDataRange().getValues());
+  const log = readBalanceLog_(ss);
+  const cur = currentBalances_(log);
+  const iso = function (d) { return d ? Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd'T'HH:mm") : null; };
+  const now = new Date();
+  // szacunek na dziś: od ostatniego salda konto „na co dzień” traci wydatki dodane w aplikacji, konto „wpływy” zyskuje wpływy
+  const entries = (model.entries || []).filter(function (e) { return !e.undone && e.added; });
+  const sinceSum = function (since, kind) {
+    if (!since) return 0;
+    return r2_(entries.filter(function (e) { return e.kind === kind && new Date(e.added) > since; }).reduce(function (s, e) { return s + (e.amount || 0); }, 0));
+  };
+  const list = A.accounts.map(function (a) {
+    const c = cur[a.name] || null;
+    let est = c ? c.balance : null, estNote = '';
+    if (c && a.role === 'na co dzień') { const sp = sinceSum(c.at, 'wydatek'); if (sp) { est = r2_(est - sp); estNote = 'po wydatkach dodanych od tego czasu: ' + fmtPl_(sp) + ' zł'; } }
+    if (c && a.role === 'wpływy') { const inc = sinceSum(c.at, 'wpływ'); if (inc) { est = r2_(est + inc); estNote = 'po wpływach dodanych od tego czasu: ' + fmtPl_(inc) + ' zł'; } }
+    return { row: a.row, name: a.name, bank: a.bank, kind: a.kind, role: a.role, show: a.show, note: a.note,
+      balance: c ? r2_(c.balance) : null, asOf: c ? iso(c.at) : null, est: est === null ? null : r2_(est), estNote: estNote };
+  });
+  const known = list.filter(function (a) { return a.balance !== null; });
+  const total = known.length ? r2_(known.reduce(function (s, a) { return s + a.balance; }, 0)) : null;
+  const totalEst = known.length ? r2_(known.reduce(function (s, a) { return s + a.est; }, 0)) : null;
+  const lastAt = log.filter(function (x) { return !x.undone; }).reduce(function (m, x) { return x.at && (!m || x.at > m) ? x.at : m; }, null);
+  // poprzednia pełna aktualizacja (do „zmiana od …”)
+  const updates = [];
+  log.forEach(function (x) { if (!x.undone && x.kind === 'aktualizacja' && updates.indexOf(x.id) < 0) updates.push(x.id); });
+  let change = null;
+  if (updates.length >= 2) {
+    const before = {}, prevId = updates[updates.length - 2];
+    let prevAt = null;
+    for (let i = 0; i < log.length; i++) {
+      const x = log[i];
+      if (x.undone) continue;
+      before[x.account] = x.balance;
+      if (x.id === prevId) prevAt = x.at;
+      if (x.id === prevId && (i === log.length - 1 || log[i + 1].id !== prevId)) break;
+    }
+    const prevTotal = Object.keys(before).reduce(function (s, k) { return s + (before[k] || 0); }, 0);
+    if (total !== null) change = { since: iso(prevAt), amount: r2_(total - prevTotal) };
+  }
+  const loans = A.loans.map(function (l) {
+    const pays = log.filter(function (x) { return !x.undone && x.loan === l.name; });
+    const paid = r2_(pays.reduce(function (s, x) { return s - (x.change || 0); }, 0));
+    return { row: l.row, name: l.name, amount: l.amount, lender: l.lender, since: l.since ? dateStr_(l.since) : null, note: l.note,
+      paid: paid, remaining: r2_(Math.max(0, l.amount - paid)),
+      history: pays.slice(-12).reverse().map(function (x) { return { id: x.id, at: iso(x.at), amount: r2_(-(x.change || 0)), account: x.account, desc: x.desc }; }) };
+  });
+  // ostatnie operacje (do historii i cofania)
+  const ops = [], seen = {};
+  for (let i = log.length - 1; i >= 0 && ops.length < 15; i--) {
+    const x = log[i];
+    if (seen[x.id]) { seen[x.id].rows.push({ account: x.account, balance: x.balance, change: x.change }); continue; }
+    seen[x.id] = { id: x.id, at: iso(x.at), kind: x.kind, desc: x.desc, loan: x.loan, undone: x.undone, rows: [{ account: x.account, balance: x.balance, change: x.change }] };
+    ops.push(seen[x.id]);
+  }
+  ops.forEach(function (o) { o.undoable = !o.undone && canUndoOp_(log, o.id); });
+  // ile zostanie jeszcze wydane w tym miesiącu (typowo) – do podpowiedzi przelewu na konto „na co dzień”
+  return {
+    list: list, total: total, totalEst: totalEst, lastUpdate: iso(lastAt),
+    daysSinceUpdate: lastAt ? Math.floor((now - lastAt) / 864e5) : null,
+    change: change, loans: loans, ops: ops, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
+  };
+}
+
+/** Operację można cofnąć, jeśli po niej żadne z jej kont nie miało nowszego wpisu. */
+function canUndoOp_(log, id) {
+  const rows = log.filter(function (x) { return x.id === id; });
+  if (!rows.length) return false;
+  const last = Math.max.apply(null, rows.map(function (x) { return x.r; }));
+  const accs = rows.map(function (x) { return x.account; });
+  return !log.some(function (x) { return x.r > last && !x.undone && accs.indexOf(x.account) >= 0; });
+}
+
+function accountsOrThrow_(ss) {
+  const sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+  if (!sh) throw new Error('Brak zakładki „' + CFG.ACCOUNTS_SHEET + '” w arkuszu.');
+  return parseAccounts_(sh.getDataRange().getValues());
+}
+function opId_() { return 'S' + Utilities.getUuid().replace(/-/g, '').slice(0, 10); }
+function money_(x) { const n = Math.round(Number(String(x === null || x === undefined ? '' : x).replace(/\s/g, '').replace(',', '.')) * 100) / 100; return isFinite(n) ? n : null; }
+
+/** Aktualizacja sald z banku: { balances: { 'Nazwa konta': kwota, … } }. */
+function saveBalances(arg) {
+  return withLock_(function (ss) {
+    const A = accountsOrThrow_(ss), b = (arg && arg.balances) || {};
+    const names = A.accounts.map(function (a) { return a.name; });
+    const cur = currentBalances_(readBalanceLog_(ss));
+    const rows = [], id = opId_(), now = new Date();
+    Object.keys(b).forEach(function (n) {
+      if (names.indexOf(n) < 0) throw new Error('Nie ma konta „' + n + '”. Odśwież aplikację.');
+      if (b[n] === '' || b[n] === null || b[n] === undefined) return;
+      const v = money_(b[n]);
+      if (v === null || Math.abs(v) > 1e9) throw new Error('Niepoprawna kwota dla „' + n + '”.');
+      const prev = cur[n] ? cur[n].balance : null;
+      rows.push([id, now, n, v, prev === null ? '' : r2_(v - prev), 'aktualizacja', String(arg.note || '').slice(0, 100), '', '']);
+    });
+    if (!rows.length) throw new Error('Wpisz saldo co najmniej jednego konta.');
+    const sh = balancesSheet_(ss);
+    sh.getRange(sh.getLastRow() + 1, 1, rows.length, BAL_HEADER.length).setValues(rows);
+    return { op: id, count: rows.length };
+  });
+}
+
+/** Przelew między własnymi kontami: { from, to, amount }. Suma się nie zmienia. */
+function transferBetween(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, A = accountsOrThrow_(ss), names = A.accounts.map(function (x) { return x.name; });
+    if (names.indexOf(a.from) < 0 || names.indexOf(a.to) < 0) throw new Error('Wybierz oba konta.');
+    if (a.from === a.to) throw new Error('Wybierz dwa różne konta.');
+    const amount = money_(a.amount);
+    if (!(amount > 0)) throw new Error('Wpisz kwotę przelewu.');
+    const cur = currentBalances_(readBalanceLog_(ss));
+    if (!cur[a.from] || !cur[a.to]) throw new Error('Najpierw wpisz saldo obu kont („Aktualizuj salda”).');
+    const id = opId_(), now = new Date(), desc = String(a.desc || '').slice(0, 100) || (a.from + ' → ' + a.to);
+    const sh = balancesSheet_(ss);
+    sh.getRange(sh.getLastRow() + 1, 1, 2, BAL_HEADER.length).setValues([
+      [id, now, a.from, r2_(cur[a.from].balance - amount), -amount, 'przelew', desc, '', ''],
+      [id, now, a.to, r2_(cur[a.to].balance + amount), amount, 'przelew', desc, '', '']
+    ]);
+    return { op: id };
+  });
+}
+
+/** Spłata pożyczki: { loan, amount, from }. Zmniejsza saldo konta i kwotę do oddania. */
+function repayLoan(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, A = accountsOrThrow_(ss);
+    const loan = A.loans.filter(function (l) { return l.name === a.loan; })[0];
+    if (!loan) throw new Error('Nie ma pożyczki „' + a.loan + '”.');
+    if (A.accounts.map(function (x) { return x.name; }).indexOf(a.from) < 0) throw new Error('Wybierz konto, z którego idzie przelew.');
+    const amount = money_(a.amount);
+    if (!(amount > 0)) throw new Error('Wpisz kwotę spłaty.');
+    const log = readBalanceLog_(ss), cur = currentBalances_(log);
+    if (!cur[a.from]) throw new Error('Najpierw wpisz saldo konta „' + a.from + '”.');
+    const paid = log.filter(function (x) { return !x.undone && x.loan === loan.name; }).reduce(function (s, x) { return s - (x.change || 0); }, 0);
+    if (amount > loan.amount - paid + 0.005) throw new Error('Do oddania zostało ' + fmtPl_(loan.amount - paid) + ' zł.');
+    const id = opId_();
+    const sh = balancesSheet_(ss);
+    sh.appendRow([id, new Date(), a.from, r2_(cur[a.from].balance - amount), -amount, 'spłata', String(a.desc || '').slice(0, 100) || 'Spłata: ' + loan.name, loan.name, '']);
+    return { op: id };
+  });
+}
+
+/** Cofnięcie operacji na kontach (aktualizacja, przelew, spłata), jeśli po niej nic się na tych kontach nie zmieniło. */
+function undoAccountOp(arg) {
+  return withLock_(function (ss) {
+    const id = String(arg && arg.id || '');
+    const log = readBalanceLog_(ss);
+    const rows = log.filter(function (x) { return x.id === id && !x.undone; });
+    if (!rows.length) throw new Error('Nie znalazłem tej operacji albo jest już cofnięta.');
+    if (!canUndoOp_(log, id)) throw new Error('Po tej operacji salda tych kont już się zmieniły. Wpisz aktualne salda zamiast cofać.');
+    const sh = balancesSheet_(ss);
+    rows.forEach(function (x) { sh.getRange(x.r, 9).setValue('cofnięty ' + dateStr_(new Date())); });
+    return { undone: id };
+  });
+}
+
+/** Dodanie albo zmiana konta: { row?, originalName?, name, bank, kind, role, show }. */
+function saveAccount(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    if (!sh) throw new Error('Brak zakładki „' + CFG.ACCOUNTS_SHEET + '”.');
+    const A = parseAccounts_(sh.getDataRange().getValues());
+    const name = cleanText_(a.name, 50);
+    if (!name) throw new Error('Nadaj kontu nazwę.');
+    const kind = ACC_KINDS.indexOf(a.kind) >= 0 ? a.kind : 'inne', role = ACC_ROLES.indexOf(a.role) >= 0 ? a.role : '';
+    const row = [name, cleanText_(a.bank, 30), kind, role, a.show === false ? 'NIE' : 'TAK'];
+    // jedna rola „wpływy” i jedna „na co dzień”: nowa przejmuje rolę od poprzedniego konta
+    const clearRole = function () { if (role === 'wpływy' || role === 'na co dzień') A.accounts.forEach(function (x) { if (x.role === role && x.row !== a.row) sh.getRange(x.row, 4).setValue(''); }); };
+    if (a.row) {
+      const cur = A.accounts.filter(function (x) { return x.row === a.row; })[0];
+      if (!cur || cur.name !== a.originalName) throw new Error('Konta w arkuszu zmieniły się w międzyczasie. Odśwież aplikację.');
+      if (name !== cur.name) {
+        if (A.accounts.some(function (x) { return x.name === name; })) throw new Error('Konto „' + name + '” już istnieje.');
+        const bs = ss.getSheetByName(CFG.BALANCES_SHEET);   // historia idzie za nową nazwą
+        if (bs && bs.getLastRow() > 1) { const v = bs.getRange(2, 3, bs.getLastRow() - 1, 1).getValues(); v.forEach(function (r, i) { if (String(r[0]).trim() === cur.name) bs.getRange(i + 2, 3).setValue(name); }); }
+      }
+      sh.getRange(a.row, 1, 1, 5).setValues([row]);
+      clearRole();
+      return { account: name };
+    }
+    if (A.accounts.some(function (x) { return x.name === name; })) throw new Error('Konto „' + name + '” już istnieje.');
+    const header = A.sectionRows.acc;
+    if (!header) throw new Error('Nie znalazłem sekcji „KONTA” w zakładce Konta.');
+    const last = A.accounts.length ? Math.max.apply(null, A.accounts.map(function (x) { return x.row; })) : header + 1;
+    sh.insertRowAfter(last);
+    sh.getRange(last + 1, 1, 1, 5).setValues([row]);
+    clearRole();
+    return { account: name };
+  });
 }
 
 /* ============================ DIAGNOSTYKA ============================ */

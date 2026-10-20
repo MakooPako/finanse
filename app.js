@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '13';
+const CLIENT_VERSION = '14';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -9,6 +9,7 @@ function startApp(initial) {
   const MONTHS_GEN = ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'];
   const zlc = x => (x < 0 ? '−' : '') + Math.abs(x || 0).toLocaleString('pl-PL', { minimumFractionDigits: Number.isInteger(x) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0zł';
   const MONTHS_SHORT = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+  const MONTHS_NOM = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
   const MONTHS_LOC = ['styczniu', 'lutym', 'marcu', 'kwietniu', 'maju', 'czerwcu', 'lipcu', 'sierpniu', 'wrześniu', 'październiku', 'listopadzie', 'grudniu'];
   const fmtDay = iso => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS_GEN[m - 1]; };
   const fmtShort = iso => { if (!iso) return ''; const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTHS_SHORT[m - 1]; };
@@ -35,8 +36,8 @@ function startApp(initial) {
   const BLOCK_COLOR = { mieszkanie: '#3987e5', nieistotne: '#d95926', wazne: '#199e70', auto: '#c98500', tbs: '#d55181', kredyt: '#008300', wakacje: '#9085e9', other: '#5b6779' };
   // kolory bloków: własne z Ustawień (zapisane w skrypcie, wspólne dla urządzeń) albo domyślne
   const colorOf = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
-  let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A';
-  const TABS = ['teraz', 'wydatki', 'plan', 'wpisy', 'urzadzenia'];
+  let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
+  const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
   let PREV_TAB = 'teraz';   // dokąd wraca „‹ Wróć” z ekranu Urządzenia
   const OPEN_CATS = new Set();
   try {
@@ -141,7 +142,7 @@ function startApp(initial) {
   }
   function drawVisible() {
     if (TAB === 'wydatki') drawYear();
-    if (TAB === 'plan') drawSavings();
+    if (TAB === 'oszczednosci') drawSavings();
   }
   function setTab(name, keepScroll) {
     if (TABS.indexOf(name) < 0) return;
@@ -417,7 +418,7 @@ function startApp(initial) {
   const cur = D.current;
   const t = D.today;
   const wide = isWide();
-  const V = { teraz: '', wydatki: '', plan: '', wpisy: '', urzadzenia: '' };
+  const V = { teraz: '', wydatki: '', plan: '', oszczednosci: '', wpisy: '', urzadzenia: '' };
   const fcCur = (D.forecast || []).find(f => f.isCurrent);
 
   /* ================= pasek aplikacji (poza #app, aktualizowany przy każdym render) ================= */
@@ -462,6 +463,16 @@ function startApp(initial) {
   if (D.unpaid.length) alerts.push({ s: 'warn', t: `<b>Do zapłaty</b>: ${D.unpaid.map(u => esc(u.block) + ', ' + esc(labelFor(u.block, u.col)) + (u.amount ? ' <span class="num">' + zl(u.amount) + '</span>' : '')).join('; ')}.` });
   D.missing.forEach(x => alerts.push({ s: 'warn', t: `<b>Do uzupełnienia w arkuszu</b>: ${esc(x.block)}, ${esc(x.col)} (${x.month.toLowerCase()}), „${esc(x.text)}”.` }));
   D.warnings.forEach(w => alerts.push({ s: 'warn', t: esc(w) }));
+  if (D.accounts && cur) {
+    const AC = D.accounts, daily = AC.list.find(a => a.role === 'na co dzień' && a.est !== null);
+    const income = AC.list.find(a => a.role === 'wpływy');
+    const need = Math.max(0, Math.round(Math.max(cur.expectedExpenses, cur.expenses) - cur.expenses));
+    if (daily && AC.daysSinceUpdate !== null && AC.daysSinceUpdate <= 40 && daily.est < need) {
+      const send = Math.ceil((need - daily.est) / 100) * 100;
+      alerts.push({ s: 'warn', t: `<b>${esc(daily.name)}</b>: może zabraknąć około <span class="num">${zl(send)}</span> do końca miesiąca${income && income.name !== daily.name ? `. Przelej z ${esc(income.name)}` : ''}. <span class="alert-acts"><button type="button" class="edit" data-goto="oszczednosci">Szczegóły</button></span>` });
+    }
+    if (AC.daysSinceUpdate !== null && AC.daysSinceUpdate > 31) alerts.push({ s: 'warn', t: `<b>Salda kont</b> mają ${AC.daysSinceUpdate} dni. <span class="alert-acts"><button type="button" class="edit" data-acc-update>Aktualizuj salda</button></span>` });
+  }
   newDevices().forEach(d => alerts.push({ s: 'over', t: `<b>Nowe urządzenie: ${esc(d.name)}</b>${d.desc ? ` (${esc(d.desc)})` : ''}, połączone ${whenTxt(d.created)}. To Twoje? <span class="alert-acts"><button type="button" class="edit" data-dev-ack="${esc(d.id)}">Tak, moje</button><button type="button" class="edit warn-txt" data-dev-remove="${esc(d.id)}">Usuń je</button></span>` }));
   if (alerts.length) {
     V.teraz += `<ul class="alerts" aria-label="Alerty">${alerts.map(a => `<li><span class="ico ${STATE[a.s].cls}" aria-label="${STATE[a.s].label}">${STATE[a.s].ico}</span><div>${a.t}</div></li>`).join('')}</ul>`;
@@ -506,7 +517,7 @@ function startApp(initial) {
     <button type="button" class="btn-sm" data-pay-new>+ Dodaj</button></div>`;
   if (due.length) payH += `<ul class="pay-list">${due.map(payRow).join('')}</ul>`;
   if (paid.length) payH += `<details class="paid-more" data-keep="paid"${OPEN_CATS.has('paid') ? ' open' : ''}><summary><span>Zapłacone w tym okresie <small>${paid.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary><ul class="pay-list">${paid.map(payRow).join('')}</ul></details>`;
-  if (nextSub) payH += `<p class="sub-next">Najbliższa subskrypcja: <b>${esc(nextSub.name)}</b> ${dni(nextSub.daysLeft)}${nextSub.toPay !== null ? `, ${zlc(nextSub.toPay)}` : ''}. <button type="button" class="edit" data-goto="plan" data-scroll="h-subs">Wszystkie</button></p>`;
+  if (nextSub) payH += `<p class="sub-next">Najbliższa subskrypcja: <b>${esc(nextSub.name)}</b> ${dni(nextSub.daysLeft)}${nextSub.toPay !== null ? `, ${zlc(nextSub.toPay)}` : ''}. <button type="button" class="edit" data-goto="plan" data-scroll="h-fixed">Wszystkie stałe opłaty</button></p>`;
   payH += `</section>`;
 
   /* ================= TERAZ: limity ================= */
@@ -594,18 +605,6 @@ function startApp(initial) {
       ${(() => { const f = (D.forecast || []).find(x => !x.isCurrent); if (!f) return ''; const lv = VARIANT === 'B' ? f.leftB : f.leftA; return `<div><span class="k">W przyszłym miesiącu ${lv < 0 ? 'zabraknie' : 'zostanie'}</span><span class="v num">${zl(Math.abs(lv))}</span><span class="s">${esc(D.monthNames[f.m] || f.label)}: dochód ${zl(VARIANT === 'B' ? f.incomeB : f.incomeA)}, wydatki ${zl(f.expenses)}</span></div>`; })()}
     </div></section>`;
 
-  /* ================= PLAN: ile odłożysz ================= */
-  if (D.savings && D.savings.points.length) {
-    const S = D.savings;
-    V.plan += `<section class="panel" aria-labelledby="h-sav"><h2 id="h-sav">Ile odłożysz</h2>
-      <p class="desc">Ile przybędzie od ${esc(S.fromLabel)}, jeśli odłożysz wszystko, co zostaje z każdego miesiąca. Uwzględnia raty, terminy roczne i podatek.</p>
-      <div class="sav-points">${S.points.map(pt => `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">+${zlR(pt.cumA, pt.cumB)}</b><small>${pt.quarter}</small></div>`).join('')}</div>
-      <div class="sav-chart" id="savChart"></div>
-      <div class="legend"><span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span><span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span><span style="color:var(--muted)">Dotknij wykresu, żeby zobaczyć miesiąc.</span></div>
-      <p class="total">Nie uwzględnia wakacji ani większych jednorazowych zakupów. Dodaj je w zakładce Terminy w arkuszu, a symulacja je odejmie.</p>
-    </section>`;
-  }
-
   /* ================= PLAN: prognoza ================= */
   let fcH = `<section class="panel" aria-labelledby="h-fc"><h2 id="h-fc">Prognoza na ${D.forecast.length} mies.</h2>
     <p class="desc">Typowy miesiąc z ostatnich danych, plus raty, terminy i podatek.</p>`;
@@ -642,30 +641,44 @@ function startApp(initial) {
   dueH += `</section>`;
   V.plan += `<div class="cols">${fcH}${dueH}</div>`;
 
-  /* ================= PLAN: subskrypcje ================= */
+  /* ================= PLAN: stałe opłaty (płacone ręcznie i pobierane same) ================= */
   {
-    const out = subs.filter(p => !p.income), inc = subs.filter(p => p.income);
-    const perM = out.reduce((s, p) => s + (p.perMonth || 0), 0), perY = out.reduce((s, p) => s + (p.perYear || 0), 0);
-    const incM = inc.reduce((s, p) => s + (p.perMonth || 0), 0);
+    const all = D.payments || [];
+    const out = all.filter(p => !p.income), inc = all.filter(p => p.income);
+    const perMonth = p => p.estimate !== null && p.estimate !== undefined ? p.estimate / (p.every || 1) : null;
+    const sumM = list => list.reduce((s, p) => s + (perMonth(p) || 0), 0);
+    const manual = out.filter(p => !p.auto), autos = out.filter(p => p.auto);
+    const unknown = out.filter(p => perMonth(p) === null).length;
     const EV = { 1: 'co miesiąc', 2: 'co 2 miesiące', 3: 'co kwartał', 6: 'co pół roku', 12: 'co rok' };
     const row = p => {
-      const pend = subPending(p);
-      const when = p.state === 'ask' && !pend ? `<b class="warn-txt">czeka na odpowiedź</b> (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
-        : p.state === 'ask' ? 'zapisuję w arkuszu…'
-        : p.state === 'snoozed' ? `zapytam ponownie ${fmtDay(p.snoozedUntil)} (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
-        : `następne ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
-      const last = p.last && p.state === 'scheduled' ? (p.last.answer === 'skip' ? `w ${MONTHS_LOC[+p.last.period.slice(5) - 1]} nie było` : `${p.last.month.toLowerCase()}: ${p.last.amount !== null ? zlc(p.last.amount) : '✓'}`) : '';
-      return `<li class="pay st-${p.state === 'ask' && !pend ? 'soon' : p.state === 'scheduled' ? 'paid' : 'ok'}"><span class="stripe" aria-hidden="true"></span>
-        <div><div class="nm">${esc(p.name)}${p.income ? ' <span class="tag">wpływ</span>' : ''}</div><div class="when">${when}</div>
-        <div class="sub">${EV[p.every] || 'co ' + p.every + ' mies.'}${p.every === 12 ? ', ' + fmtDay(p.dueDate) : `, ${p.day}. dnia`}${last ? ' · ' + last : ''}${!p.income && p.perYear !== null && p.every < 12 ? ` · ${zlc(Math.round(p.perYear))} rocznie` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
-        <div class="act"><span class="amt">${p.toPay !== null ? (p.income ? '+' : '') + zlc(p.toPay) : '?'}</span>${p.amount === null && p.toPay !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
+      if (p.auto) {
+        const pend = subPending(p);
+        const when = p.state === 'ask' && !pend ? `<b class="warn-txt">czeka na odpowiedź</b> (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+          : p.state === 'ask' ? 'zapisuję w arkuszu…'
+          : p.state === 'snoozed' ? `zapytam ponownie ${fmtDay(p.snoozedUntil)} (${p.income ? 'wpływ' : 'pobranie'} ${fmtDay(p.dueDate)})`
+          : `następne ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
+        const last = p.last && p.state === 'scheduled' ? (p.last.answer === 'skip' ? `w ${MONTHS_LOC[+p.last.period.slice(5) - 1]} nie było` : `${p.last.month.toLowerCase()}: ${p.last.amount !== null ? zlc(p.last.amount) : '✓'}`) : '';
+        return `<li class="pay st-${p.state === 'ask' && !pend ? 'soon' : p.state === 'scheduled' ? 'paid' : 'ok'}" data-fx="auto"><span class="stripe" aria-hidden="true"></span>
+          <div><div class="nm">${esc(p.name)} <span class="tag ${p.income ? 'tg-in' : 'tg-auto'}">${p.income ? 'wpływ' : 'pobiera się samo'}</span></div><div class="when">${when}</div>
+          <div class="sub">${EV[p.every] || 'co ' + p.every + ' mies.'}${p.every === 12 ? ', ' + fmtDay(p.dueDate) : `, ${p.day}. dnia`}${last ? ' · ' + last : ''}${!p.income && p.perYear !== null && p.every < 12 ? ` · ${zlc(Math.round(p.perYear))} rocznie` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
+          <div class="act"><span class="amt">${p.toPay !== null ? (p.income ? '+' : '') + zlc(p.toPay) : '?'}</span>${p.amount === null && p.toPay !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
+      }
+      const when = p.state === 'paid' && p.paid ? `✓ ${p.paid.month.toLowerCase()} zapłacony; następny termin ${fmtDay(p.dueDate)}` : p.daysLeft < 0 ? `<b class="warn-txt">po terminie</b> (${fmtDay(p.dueDate)})` : `termin ${fmtDay(p.dueDate)}, <b>${dni(p.daysLeft)}</b>`;
+      const pm = perMonth(p);
+      return `<li class="pay st-${p.state}" data-fx="manual"><span class="stripe" aria-hidden="true"></span>
+        <div><div class="nm">${esc(p.name)} <span class="tag tg-man">płacę ręcznie</span></div><div class="when">${when}</div>
+        <div class="sub">${EV[p.every] || 'co ' + p.every + ' mies.'}, do ${p.day}. dnia${p.every > 1 && pm !== null ? ` · ${zlc(Math.round(pm))} miesięcznie` : ''}${p.credit > 0 ? ` · nadpłata ${zlc(p.credit)}` : ''}<button type="button" class="edit" data-pay-edit="${p.row}">Edytuj</button></div></div>
+        <div class="act"><span class="amt">${p.estimate !== null ? zlc(p.estimate) : '?'}</span>${p.amount === null && p.estimate !== null ? '<span class="amt-note">jak ostatnio</span>' : ''}</div></li>`;
     };
-    const list = subs.slice().sort((a, b) => (a.state === 'scheduled') - (b.state === 'scheduled') || a.daysLeft - b.daysLeft);
-    V.plan += `<section class="panel subs" aria-labelledby="h-subs"><div class="panel-head"><div><h2 id="h-subs">Subskrypcje</h2>
-      <p class="desc">${out.length ? `Pobierają się same z konta: około <b class="num">${zlc(Math.round(perM))}</b> miesięcznie, <b class="num">${zlc(Math.round(perY))}</b> rocznie.${incM ? ` Wraca ${zlc(Math.round(incM))} miesięcznie (${inc.map(p => esc(p.name)).join(', ')}).` : ''} W dniu pobrania zapytam, czy zeszło z konta.`
-        : 'Netflix, Spotify i inne opłaty, które bank pobiera sam. W dniu pobrania aplikacja zapyta, czy zeszło z konta, i wpisze kwotę do arkusza.'}</p></div>
-      <button type="button" class="btn-sm" data-sub-new>+ Dodaj</button></div>
-      ${list.length ? `<ul class="pay-list">${list.map(row).join('')}</ul>` : ''}</section>`;
+    const ord = p => (p.auto ? (p.state === 'ask' ? 0 : 2) : (p.state === 'paid' ? 2 : 1));
+    const list = all.slice().sort((a, b) => ord(a) - ord(b) || a.daysLeft - b.daysLeft);
+    const F = FIXED_FILTER;
+    V.plan += `<section class="panel fixed" aria-labelledby="h-fixed"><div class="panel-head"><div><h2 id="h-fixed">Stałe opłaty</h2>
+      <p class="desc">${out.length ? `Wszystko, co płacisz regularnie: około <b class="num">${zlc(Math.round(sumM(out)))}</b> miesięcznie, <b class="num">${zlc(Math.round(sumM(out) * 12))}</b> rocznie. Płacisz ręcznie ${zlc(Math.round(sumM(manual)))}, samo pobiera się ${zlc(Math.round(sumM(autos)))}.${inc.length ? ` Wraca ${zlc(Math.round(sumM(inc)))} miesięcznie (${inc.map(p => esc(p.name)).join(', ')}).` : ''}${unknown ? ` Bez kwoty: ${unknown}.` : ''}`
+        : 'Czynsz, rachunki, raty i subskrypcje w jednym miejscu.'}</p></div>
+      <div class="ph-btns"><button type="button" class="btn-sm" data-pay-new>+ Płatność</button><button type="button" class="btn-sm" data-sub-new>+ Subskrypcja</button></div></div>
+      <div class="seg-sm fx-seg" role="group" aria-label="Filtr"><button type="button" data-fx-f="all" aria-pressed="${F === 'all'}">Wszystkie</button><button type="button" data-fx-f="manual" aria-pressed="${F === 'manual'}">Płacę ręcznie</button><button type="button" data-fx-f="auto" aria-pressed="${F === 'auto'}">Pobiera się samo</button></div>
+      ${list.length ? `<ul class="pay-list fx-list" data-fx-show="${F}">${list.map(row).join('')}</ul>` : ''}</section>`;
   }
 
   /* ================= PLAN: drugi próg podatkowy ================= */
@@ -688,6 +701,123 @@ function startApp(initial) {
       <p class="tax-msg">${msg}</p>
     </section>`;
   }
+
+  /* ================= OSZCZĘDNOŚCI: konta, pożyczka, ile będzie na kontach ================= */
+  {
+    const AC = D.accounts;
+    const KIND_COL = { 'bieżące': '#6da7ec', 'oszczędnościowe': '#34c38f', 'gotówka': '#e0b84c', 'walutowe': '#a78bfa', 'inne': '#7a8699' };
+    const dayOf = t => t ? fmtDay(t.slice(0, 10)) : '';
+    let O = '';
+    if (!AC) {
+      O += `<section class="panel"><h2>Oszczędności</h2><p class="desc">${D.version && D.version < '14' ? 'Żeby zobaczyć konta, wklej w Apps Script nowy Code.gs (wersja 14) i wdróż nową wersję.' : 'W arkuszu nie ma jeszcze zakładki „Konta”.'}</p></section>`;
+    } else {
+      const known = AC.list.filter(a => a.balance !== null);
+      const has = known.length > 0;
+      const shown = AC.list.filter(a => a.show && (a.balance === null || Math.abs(a.est) >= 0.005));
+      const empty = AC.list.filter(a => a.show && a.balance !== null && Math.abs(a.est) < 0.005);
+      const hidden = AC.list.filter(a => !a.show);
+      const daily = AC.list.find(a => a.role === 'na co dzień' && a.est !== null);
+      const income = AC.list.find(a => a.role === 'wpływy' && a.est !== null);
+      const savings = AC.list.find(a => a.role === 'oszczędności');
+      const estDiff = has && Math.abs(AC.totalEst - AC.total) >= 0.005;
+      // hero: suma na kontach
+      O += `<section class="month osz-hero" aria-labelledby="h-osz">
+        <div class="m-head"><h1 id="h-osz">Oszczędności</h1><span>${AC.lastUpdate ? 'salda z ' + dayOf(AC.lastUpdate) : 'brak sald'}</span></div>
+        <p class="m-label">${has ? (estDiff ? 'Na kontach jest teraz około' : 'Na wszystkich kontach') : 'Wpisz salda swoich kont'}</p>
+        <p class="m-big num">${has ? zl(AC.totalEst) : '—'}</p>
+        ${has ? `<div class="osz-bar" role="img" aria-label="Podział na rodzaje kont">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + Math.max(0, a.est), 0); return v > 0 ? `<span style="flex-basis:${(v / Math.max(1, AC.totalEst) * 100).toFixed(2)}%;background:${KIND_COL[k]}" title="${k}: ${zl(v)}"></span>` : ''; }).join('')}</div>
+        <div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span><i style="background:${KIND_COL[k]}"></i>${k} <b class="num">${zl(v)}</b></span>` : ''; }).join('')}</div>` : ''}
+        ${AC.change ? `<p class="osz-change">Od ${dayOf(AC.change.since)}: <b class="num ${AC.change.amount < 0 ? 'neg' : 'pos'}">${AC.change.amount >= 0 ? '+' : ''}${zl(AC.change.amount)}</b></p>` : ''}
+        <div class="osz-acts"><button type="button" class="pay-btn" data-acc-update>Aktualizuj salda</button><button type="button" class="pay-btn ghost" data-acc-transfer${has ? '' : ' disabled'}>Przelew między kontami</button></div>
+        ${AC.daysSinceUpdate !== null && AC.daysSinceUpdate > 31 ? `<p class="warn-line osz-stale">Salda mają ${AC.daysSinceUpdate} dni. Wpisz aktualne z aplikacji banku, żeby prognoza startowała z prawdziwej kwoty.</p>` : ''}
+        ${estDiff ? `<p class="osz-note">„Około”, bo od ostatniego wpisania sald doliczam wydatki i wpływy dodane w aplikacji (szczegóły przy kontach).</p>` : ''}
+      </section>`;
+
+      // podpowiedź: czy na koncie „na co dzień” wystarczy do końca miesiąca
+      if (daily && cur) {
+        const need = Math.max(0, Math.round(Math.max(cur.expectedExpenses, cur.expenses) - cur.expenses));
+        const gap = need - daily.est;
+        const fresh = AC.daysSinceUpdate !== null && AC.daysSinceUpdate <= 40;
+        if (fresh && need > 0) {
+          const send = Math.ceil(gap / 100) * 100;
+          O += `<section class="panel osz-tip ${gap > 0 ? 'short' : 'ok'}"><h2>${gap > 0 ? 'Przelej na konto do wydatków' : 'Na wydatki wystarczy'}</h2>
+            <p class="desc">Na <b>${esc(daily.name)}</b> masz około <b class="num">${zl(daily.est)}</b>. Do końca miesiąca typowo wydasz jeszcze około <b class="num">${zl(need)}</b> (z opłatami).
+            ${gap > 0 ? `Przelej około <b class="num">${zl(send)}</b>${income && income.name !== daily.name ? ` z <b>${esc(income.name)}</b>` : ''}.` : `Zapas: około <b class="num">${zl(-gap)}</b>.`}</p>
+            ${gap > 0 && income && income.name !== daily.name ? `<button type="button" class="btn-sm" data-acc-transfer data-from="${esc(income.name)}" data-to="${esc(daily.name)}" data-amount="${send}">Zapisz przelew ${zl(send)}</button>` : ''}</section>`;
+        }
+      }
+
+      // lista kont
+      const accRow = a => `<li class="acc">
+        <span class="acc-dot" style="background:${KIND_COL[a.kind] || KIND_COL.inne}"></span>
+        <div class="acc-b"><div class="nm">${esc(a.name)}${a.role ? ` <span class="tag tg-role">${esc(a.role)}</span>` : ''}</div>
+          <div class="sub">${[a.bank, a.kind].filter(Boolean).map(esc).join(' · ')}${a.balance !== null ? ` · saldo z ${dayOf(a.asOf)}${a.est !== a.balance ? `: ${zl(a.balance)}` : ''}` : ' · brak salda'}</div>
+          ${a.estNote ? `<div class="sub est">${esc(a.estNote)}</div>` : ''}
+          <div class="acts"><button type="button" class="edit" data-acc-edit="${a.row}">Edytuj</button></div></div>
+        <div class="act"><span class="amt num">${a.balance === null ? '—' : (a.est !== a.balance ? '~' : '') + zl(a.est)}</span></div></li>`;
+      O += `<section class="panel" aria-labelledby="h-acc"><div class="panel-head"><div><h2 id="h-acc">Konta</h2>
+        <p class="desc">${has ? 'Przelewy między własnymi kontami nie zmieniają sumy.' : 'Dotknij „Aktualizuj salda” i przepisz kwoty z aplikacji banku.'}</p></div>
+        <button type="button" class="btn-sm" data-acc-new>+ Konto</button></div>
+        <ul class="acc-list">${shown.map(accRow).join('')}</ul>
+        ${empty.length ? `<details class="paid-more"><summary><span>Puste konta <small>${empty.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary><ul class="acc-list">${empty.map(accRow).join('')}</ul></details>` : ''}
+        ${hidden.length ? `<details class="paid-more"><summary><span>Ukryte <small>${hidden.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary><ul class="acc-list">${hidden.map(accRow).join('')}</ul></details>` : ''}
+      </section>`;
+
+      // pożyczki
+      const sv = savSeries();
+      AC.loans.forEach(l => {
+        const pct = l.amount ? Math.min(100, l.paid / l.amount * 100) : 0;
+        let when = '';
+        if (sv.real && l.remaining > 0) {
+          const S = sv.S, key = VARIANT === 'B' ? 'cumB' : 'cumA', n = S.length - 1;
+          const hit = S.findIndex((x, i) => i > 0 && x[key] >= l.remaining);
+          if (hit > 0) when = MONTHS_NOM[S[hit].ymi % 12] + ' ' + Math.floor(S[hit].ymi / 12);
+          else if (n >= 3) {
+            const avg = (S[n][key] - S[1][key]) / (n - 1);
+            if (avg > 0) { const k = Math.ceil((l.remaining - S[n][key]) / avg); const ym = S[n].ymi + k; when = MONTHS_NOM[ym % 12] + ' ' + Math.floor(ym / 12); }
+          }
+          if (when) {
+            const avgM = n >= 3 ? (S[n][key] - S[1][key]) / (n - 1) : 0;
+            when = `Przy obecnym tempie${avgM > 0 ? ` (około ${zl(avgM)} miesięcznie)` : ''} na kontach będzie tyle, ile do oddania, około: <b>${esc(when)}</b>.`;
+          }
+        }
+        const last = l.history[0];
+        const undoOp = last && AC.ops.find(o => o.id === last.id && o.undoable);
+        O += `<section class="panel loan" aria-labelledby="h-loan-${l.row}"><div class="panel-head"><div><h2 id="h-loan-${l.row}">${esc(l.name)}</h2>
+          <p class="desc">${l.lender ? esc(l.lender) + '. ' : ''}${l.note ? esc(l.note) : ''}</p></div>
+          ${l.remaining > 0 ? `<button type="button" class="btn-sm primary-sm" data-loan-pay="${esc(l.name)}">Spłata</button>` : ''}</div>
+          <div class="row loan-row"><span>Oddane <b class="num">${zl(l.paid)}</b> z ${zl(l.amount)}</span><span>zostało <b class="num">${zl(l.remaining)}</b></span></div>
+          <div class="track"><span data-w="${pct}" style="background:var(--good)"></span></div>
+          ${when ? `<p class="total">${when}</p>` : ''}
+          ${l.history.length ? `<ul class="loan-hist">${l.history.map(h => `<li><span>${dayOf(h.at)}</span><span>${esc(h.account)}</span><b class="num">${zl(h.amount)}</b>${undoOp && h.id === undoOp.id ? `<button type="button" class="edit" data-acc-undo="${esc(h.id)}">Cofnij</button>` : ''}</li>`).join('')}</ul>` : '<p class="total">Spłaty pojawią się tutaj. Każda zmniejsza saldo wybranego konta i kwotę do oddania. Nie jest wydatkiem w budżecie miesiąca.</p>'}
+        </section>`;
+      });
+    }
+
+    // ile będzie na kontach (prognoza)
+    if (D.savings && D.savings.points.length) {
+      const S0 = D.savings, sv = savSeries();
+      const debt = AC ? AC.loans.reduce((s2, l) => s2 + l.remaining, 0) : 0;
+      O += `<section class="panel" aria-labelledby="h-sav"><h2 id="h-sav">${sv.real ? 'Ile będzie na kontach' : 'Ile odłożysz'}</h2>
+        <p class="desc">${sv.real ? `Start: dzisiejsze ${zl(sv.base)} na kontach. Potem co miesiąc dochodzi to, co zostaje z budżetu (raty, terminy roczne i podatek już odjęte).${debt ? ' Pozioma linia to kwota do oddania.' : ''}` : `Ile przybędzie od ${esc(S0.fromLabel)}, jeśli odłożysz wszystko, co zostaje z każdego miesiąca. Uwzględnia raty, terminy roczne i podatek.`}</p>
+        <div class="sav-points">${S0.points.map(pt => { const x = sv.S.find(y => y.ymi === pt.ymi) || pt; return `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">${sv.real ? '' : '+'}${zlR(x.cumA, x.cumB)}</b><small>${pt.quarter}</small></div>`; }).join('')}</div>
+        <div class="sav-chart" id="savChart"></div>
+        <div class="legend"><span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span><span style="color:var(--muted)">Dotknij wykresu, żeby zobaczyć miesiąc.</span></div>
+        <p class="total">Nie uwzględnia wakacji ani większych jednorazowych zakupów. Dodaj je w zakładce Terminy w arkuszu, a prognoza je odejmie.</p>
+      </section>`;
+    }
+
+    // historia operacji
+    if (AC && AC.ops.length) {
+      const KIND_TXT = { aktualizacja: 'Salda z banku', przelew: 'Przelew', 'spłata': 'Spłata' };
+      O += `<section class="panel" aria-labelledby="h-ops"><details class="paid-more ops"><summary><span id="h-ops">Historia sald <small>${AC.ops.length}</small></span><span class="chev" aria-hidden="true">▶</span></summary>
+        <ul class="ops-list">${AC.ops.map(o => `<li class="${o.undone ? 'undone' : ''}"><div><b>${KIND_TXT[o.kind] || esc(o.kind)}</b> <span class="sub">${dayOf(o.at)} ${o.at ? o.at.slice(11, 16) : ''}${o.undone ? ', cofnięte' : ''}</span>
+          <div class="sub">${o.kind === 'aktualizacja' ? o.rows.slice().reverse().map(r2 => esc(r2.account) + ': ' + zl(r2.balance)).join(', ') : esc(o.desc || o.rows.map(r2 => r2.account).join(' → ')) + ': ' + zl(Math.abs(o.rows[0].change || 0))}</div></div>
+          ${o.undoable ? `<button type="button" class="edit" data-acc-undo="${esc(o.id)}">Cofnij</button>` : ''}</li>`).join('')}</ul></details></section>`;
+    }
+    V.oszczednosci = O;
+  }
+
   V.urzadzenia = `<div class="sub-head"><button type="button" class="linkish" data-goto="${PREV_TAB}">‹ Wróć</button><h1>Ustawienia</h1>
       <p>Urządzenia z dostępem do arkusza, przypomnienia o płatnościach i kolory kategorii.</p></div>` + devicesPanel() + remindersPanel() + colorsPanel() +
     `<section class="panel" aria-labelledby="h-acc"><h2 id="h-acc">Jak działa dostęp</h2><ul class="plain">
@@ -1453,15 +1583,25 @@ function startApp(initial) {
   });
 
   /* ================= wykres „Ile odłożysz” (narastająco, dwa warianty) ================= */
+  // prognoza „ile będzie na kontach”: start z dzisiejszej sumy, potem to, co zostaje z każdego miesiąca
+  function savSeries() {
+    const S0 = D.savings ? D.savings.series : [], AC = D.accounts;
+    if (!(AC && AC.totalEst !== null && S0.length)) return { S: S0, real: false };
+    const base = AC.totalEst, done = D.savings.realized || 0;
+    const S = [{ ymi: -1, label: 'dziś', cumA: base, cumB: base, items: [] }]
+      .concat(S0.map(x => Object.assign({}, x, { cumA: Math.round(base + x.cumA - done), cumB: Math.round(base + x.cumB - done) })));
+    return { S, real: true, base };
+  }
   function drawSavings() {
     const box = document.getElementById('savChart');
     if (!box || !box.clientWidth || !D.savings) return;
-    const S = D.savings.series, n = S.length - 1;
+    const SV = savSeries(), S = SV.S, n = S.length - 1;
+    const debt = SV.real && D.accounts ? D.accounts.loans.reduce((s2, l) => s2 + l.remaining, 0) : 0;
     if (n < 1) { box.innerHTML = ''; return; }
     const W = box.clientWidth, H = box.clientHeight;
     const pad = { l: 46, r: 16, t: 22, b: 26 };
     const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
-    const maxV = Math.max(1, ...S.map(x => Math.max(x.cumA, x.cumB)));
+    const maxV = Math.max(1, debt, ...S.map(x => Math.max(x.cumA, x.cumB)));
     const minV = Math.min(0, ...S.map(x => Math.min(x.cumA, x.cumB)));
     const stepV = maxV > 40000 ? 20000 : maxV > 20000 ? 10000 : 5000;
     const top = Math.ceil(maxV * 1.08 / stepV) * stepV, bot = Math.floor(minV / stepV) * stepV;
@@ -1484,6 +1624,7 @@ function startApp(initial) {
       <path d="M${f1(Bp[0].x)},${f1(Bp[0].y)}${fwd(sB, 0, n)}L${f1(A[n].x)},${f1(A[n].y)}${backRange(sA, 0, n)}Z" fill="var(--left)" opacity=".16"/>
       <path d="${lineTo(Bp, sB, 0, n)}" fill="none" stroke="var(--left)" stroke-width="1.6" stroke-dasharray="3 5" opacity=".8"/>
       <path d="${lineTo(A, sA, 0, n)}" fill="none" stroke="var(--left)" stroke-width="2.4"/>
+      ${debt ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(debt))}" y2="${f1(Y(debt))}" stroke="var(--warning)" stroke-width="1.6" stroke-dasharray="6 4" opacity=".85"/><text x="${W - pad.r}" y="${f1(Y(debt) - 6)}" text-anchor="end" fill="var(--warning)" font-size="12">do oddania ${Math.round(debt / 1000)} tys.</text>` : ''}
       ${marks}${xl}${ev}
       <g id="savHv" style="display:none" pointer-events="none">
         <line id="savHvL" y1="${pad.t}" y2="${pad.t + ih}" stroke="var(--text-2)" stroke-opacity=".5"/>
@@ -1495,7 +1636,8 @@ function startApp(initial) {
 
     /* chmurka: najechanie myszą, dotknięcie albo przesunięcie palcem */
     const hit = box.querySelector('#savHit'), hv = box.querySelector('#savHv'), tip = box.querySelector('#savTip');
-    const from = '1.' + String(S[0].ymi % 12 + 1).padStart(2, '0');
+    const from = '1.' + String((SV.real ? S[1] : S[0]).ymi % 12 + 1).padStart(2, '0');
+    const curYmi = D.year * 12 + D.currentMonth;
     const sign = (a, b) => (Math.min(a, b) >= 0 ? '+' : '') + zlR(a, b);
     const at = cx => Math.max(0, Math.min(n, Math.round((cx - box.getBoundingClientRect().left - pad.l) / (iw / n))));
     let pinned = null;
@@ -1506,11 +1648,11 @@ function startApp(initial) {
       box.querySelector('#savHvA').setAttribute('cx', X(i)); box.querySelector('#savHvA').setAttribute('cy', A[i].y);
       box.querySelector('#savHvB').setAttribute('cx', X(i)); box.querySelector('#savHvB').setAttribute('cy', Bp[i].y);
       const items = (x.items || []).map(t => `<div class="ev">${esc(t)}</div>`).join('');
-      tip.innerHTML = `<div class="t">${esc((D.monthNames || [])[x.ymi % 12] ? D.monthNames[x.ymi % 12] + ' ' + Math.floor(x.ymi / 12) : x.label)}${i === 0 ? ' <em>w trakcie</em>' : ''}</div>
+      tip.innerHTML = `<div class="t">${esc(x.ymi >= 0 && (D.monthNames || [])[x.ymi % 12] ? D.monthNames[x.ymi % 12] + ' ' + Math.floor(x.ymi / 12) : x.label)}${x.ymi === curYmi ? ' <em>w trakcie</em>' : ''}</div>
         ${x.incomeA !== undefined ? `<div class="r"><span>Dochód</span><span class="num">${zlR(x.incomeA, x.incomeB)}</span></div>
         <div class="r"><span>Wydatki</span><span class="num">${zl(x.expenses)}</span></div>
         <div class="r"><span>W tym miesiącu</span><span class="num">${sign(x.leftA, x.leftB)}</span></div>` : ''}
-        <div class="r sum"><span>Razem od ${from}</span><span class="num">${sign(x.cumA, x.cumB)}</span></div>${items}`;
+        <div class="r sum"><span>${SV.real ? (x.ymi < 0 ? 'Na kontach teraz' : 'Na kontach') : 'Razem od ' + from}</span><span class="num">${SV.real ? zlR(x.cumA, x.cumB) : sign(x.cumA, x.cumB)}</span></div>${items}`;
       const tw = tip.offsetWidth;
       tip.style.left = Math.max(4, Math.min(W - tw - 4, X(i) + (X(i) > W / 2 ? -tw - 14 : 14))) + 'px';
       tip.classList.add('on');
@@ -1628,6 +1770,113 @@ function startApp(initial) {
     } else if ((b = e.target.closest('[data-sub-skip]'))) {
       const p = subOf(b.dataset.subSkip); if (p) answerSub(p, 'skip', b);
     } else if (e.target.closest('[data-sub-new]')) openPayEdit(null, true);
+  });
+
+
+  /* ================= stałe opłaty: filtr ================= */
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-fx-f]');
+    if (!b) return;
+    FIXED_FILTER = b.dataset.fxF;
+    document.querySelectorAll('[data-fx-f]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.fxF === FIXED_FILTER)));
+    document.querySelectorAll('.fx-list').forEach(l => { l.dataset.fxShow = FIXED_FILTER; });
+  });
+
+  /* ================= oszczędności: formularze (salda, przelew, spłata, konto) ================= */
+  const FS = { busy: false, submit: null };
+  function openForm(title, html, label, submit) {
+    $('formTitle').textContent = title;
+    $('formBody').innerHTML = html;
+    $('formErr').textContent = '';
+    $('formSave').textContent = label; $('formSave').disabled = false;
+    FS.submit = submit; FS.label = label;
+    showSheet($('formSheet'));
+  }
+  $('formSave').addEventListener('click', async () => {
+    if (!FS.submit || FS.busy) return;
+    FS.busy = true; $('formSave').disabled = true; $('formSave').textContent = 'Zapisuję…'; $('formErr').textContent = '';
+    try {
+      const msg = await FS.submit();
+      if (msg) { hideSheet(); toast(msg); }
+    } catch (err) {
+      $('formErr').textContent = navigator.onLine === false ? 'Brak internetu. Spróbuj, gdy wróci połączenie.' : (err.message || String(err));
+    } finally { FS.busy = false; if ($('formSave').textContent === 'Zapisuję…') { $('formSave').disabled = false; $('formSave').textContent = FS.label; } }
+  });
+  async function accCall(fn, arg) {
+    const r = await call(fn, arg);
+    if (!r || !r.ok) throw new Error((r && r.error) || 'Nie udało się zapisać.');
+    applyModel(r.model);
+    return r;
+  }
+  const accOpts = (sel, filter) => (D.accounts ? D.accounts.list : []).filter(filter || (a => a.show)).map(a => `<option value="${esc(a.name)}"${a.name === sel ? ' selected' : ''}>${esc(a.name)}${a.est !== null ? ' (' + zl(a.est) + ')' : ''}</option>`).join('');
+  const val = id => ($(id) ? $(id).value.trim() : '');
+  function openBalances() {
+    const AC = D.accounts; if (!AC) return;
+    const list = AC.list.filter(a => a.show).concat(AC.list.filter(a => !a.show));
+    openForm('Aktualizuj salda', `<p class="hint-avg">Przepisz salda z aplikacji banku. Puste pole = bez zmian.</p>
+      <div class="bal-list">${list.map((a, i) => `<label class="bal-row"><span><b>${esc(a.name)}</b><small>${a.balance !== null ? `teraz ${zl(a.balance)}, ${fmtDay(a.asOf.slice(0, 10))}` : 'jeszcze bez salda'}</small></span>
+        <input class="num-in" id="bal${i}" data-acc="${esc(a.name)}" inputmode="decimal" autocomplete="off" placeholder="${a.balance !== null ? String(a.balance).replace('.', ',') : 'kwota'}"></label>`).join('')}</div>`,
+      'Zapisz salda', async () => {
+        const b = {};
+        document.querySelectorAll('#formBody [data-acc]').forEach(inp => { if (inp.value.trim()) b[inp.dataset.acc] = inp.value.trim(); });
+        if (!Object.keys(b).length) throw new Error('Wpisz saldo co najmniej jednego konta.');
+        const r = await accCall('saveBalances', { balances: b });
+        return `Zapisano salda: ${r.count} ${r.count === 1 ? 'konto' : r.count < 5 ? 'konta' : 'kont'}. Na kontach ${zl(D.accounts.totalEst)}.`;
+      });
+  }
+  function openTransfer(from, to, amount) {
+    const AC = D.accounts; if (!AC) return;
+    const inc = AC.list.find(a => a.role === 'wpływy'), daily = AC.list.find(a => a.role === 'na co dzień');
+    openForm('Przelew między kontami', `<p class="hint-avg">Przelew między Twoimi kontami: suma oszczędności się nie zmienia.</p>
+      <label class="field"><span>Z konta</span><select id="trFrom">${accOpts(from || (inc && inc.name), a => a.show && a.balance !== null)}</select></label>
+      <label class="field"><span>Na konto</span><select id="trTo">${accOpts(to || (daily && daily.name), a => a.show && a.balance !== null)}</select></label>
+      <label class="field"><span>Kwota (zł)</span><input class="num-in" id="trAmount" inputmode="decimal" autocomplete="off" value="${amount ? esc(String(amount)) : ''}"></label>`,
+      'Zapisz przelew', async () => {
+        await accCall('transferBetween', { from: val('trFrom'), to: val('trTo'), amount: val('trAmount') });
+        return `Przelew zapisany: ${esc(val('trFrom'))} → ${esc(val('trTo'))}.`;
+      });
+  }
+  function openRepay(name) {
+    const AC = D.accounts; if (!AC) return;
+    const l = AC.loans.find(x => x.name === name); if (!l) return;
+    const sv = AC.list.find(a => a.role === 'oszczędności');
+    openForm('Spłata: ' + l.name, `<p class="hint-avg">Do oddania zostało <b class="num">${zl(l.remaining)}</b>. Spłata zmniejszy saldo wybranego konta. Nie jest wydatkiem w budżecie miesiąca.</p>
+      <label class="field"><span>Kwota (zł)</span><input class="num-in" id="lpAmount" inputmode="decimal" autocomplete="off"></label>
+      <label class="field"><span>Z konta</span><select id="lpFrom">${accOpts(sv && sv.name, a => a.show && a.balance !== null)}</select></label>`,
+      'Zapisz spłatę', async () => {
+        await accCall('repayLoan', { loan: l.name, amount: val('lpAmount'), from: val('lpFrom') });
+        const n = D.accounts.loans.find(x => x.name === l.name);
+        return `Spłata zapisana. Zostało ${zl(n ? n.remaining : 0)} do oddania.`;
+      });
+  }
+  function openAccount(row) {
+    const AC = D.accounts; if (!AC) return;
+    const a = row ? AC.list.find(x => x.row === row) : null;
+    const KINDS = AC.kinds || ['bieżące', 'oszczędnościowe', 'walutowe', 'gotówka', 'inne'];
+    const ROLES = [['', 'zwykłe'], ['wpływy', 'tu wpływa pensja'], ['na co dzień', 'na wydatki na co dzień'], ['oszczędności', 'główne oszczędności']];
+    openForm(a ? 'Edytuj konto' : 'Nowe konto', `<label class="field"><span>Nazwa</span><input id="acName" maxlength="50" autocomplete="off" value="${a ? esc(a.name) : ''}" placeholder="np. mBank eKonto"></label>
+      <div class="two-col"><label class="field"><span>Bank</span><input id="acBank" maxlength="30" autocomplete="off" value="${a ? esc(a.bank) : ''}"></label>
+      <label class="field"><span>Rodzaj</span><select id="acKind">${KINDS.map(k => `<option${a && a.kind === k ? ' selected' : ''}>${k}</option>`).join('')}</select></label></div>
+      <label class="field"><span>Rola</span><select id="acRole">${ROLES.map(([v, t]) => `<option value="${v}"${a && a.role === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <p class="hint-avg">„Tu wpływa pensja” i „na wydatki” służą podpowiedzi, ile przelać na konto do wydatków. Każdą z tych ról ma jedno konto.</p>
+      <label class="check"><input type="checkbox" id="acShow"${!a || a.show ? ' checked' : ''}><span>Pokazuj na liście kont</span></label>`,
+      a ? 'Zapisz zmiany' : 'Dodaj konto', async () => {
+        await accCall('saveAccount', { row: a ? a.row : null, originalName: a ? a.name : '', name: val('acName'), bank: val('acBank'), kind: val('acKind'), role: $('acRole').value, show: $('acShow').checked });
+        return a ? 'Zapisano zmiany konta.' : 'Dodano konto „' + esc(val('acName')) + '”. Wpisz jego saldo w „Aktualizuj salda”.';
+      });
+  }
+  document.addEventListener('click', async e => {
+    let b;
+    if (e.target.closest('[data-acc-update]')) openBalances();
+    else if ((b = e.target.closest('[data-acc-transfer]'))) { if (!b.disabled) openTransfer(b.dataset.from, b.dataset.to, b.dataset.amount); }
+    else if ((b = e.target.closest('[data-loan-pay]'))) openRepay(b.dataset.loanPay);
+    else if ((b = e.target.closest('[data-acc-edit]'))) openAccount(+b.dataset.accEdit);
+    else if (e.target.closest('[data-acc-new]')) openAccount(null);
+    else if ((b = e.target.closest('[data-acc-undo]'))) {
+      b.disabled = true;
+      try { await accCall('undoAccountOp', { id: b.dataset.accUndo }); toast('Cofnięto. Salda wróciły do poprzednich.'); }
+      catch (err) { toast(esc(err.message || err)); b.disabled = false; }
+    }
   });
 
   /* ================= edytor płatności ================= */

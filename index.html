@@ -26,9 +26,10 @@
     <button type="button" data-tab="wydatki"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V5M19 20v-6"/></svg><span>Wydatki</span></button>
     <button type="button" class="tb-add" data-entry-new aria-label="Dodaj wpis"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Dodaj</span></button>
     <button type="button" data-tab="plan"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5.5" width="16" height="14.5" rx="2.5"/><path d="M4 10h16M9 3.5v4M15 3.5v4"/></svg><span>Plan</span></button>
-    <button type="button" data-tab="wpisy" class="tb-log"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5H20M9.5 12H20M9.5 17.5H20"/><circle cx="5" cy="6.5" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="17.5" r="1"/></svg><span>Wpisy</span></button>
+    <button type="button" data-tab="oszczednosci"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 7.5V5.8A1.8 1.8 0 0 0 15.7 4H6.3A2.3 2.3 0 0 0 4 6.3v11.2A2.5 2.5 0 0 0 6.5 20h11A2.5 2.5 0 0 0 20 17.5V10a2.5 2.5 0 0 0-2.5-2.5H6.2A2.2 2.2 0 0 1 4 5.8"/><path d="M15.5 14h1"/></svg><span>Oszczędności</span></button>
   </nav>
   <div class="ab-act">
+    <button type="button" class="ib ib-log" data-tab="wpisy" aria-label="Wpisy: historia i wyszukiwanie"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6.5H20M9.5 12H20M9.5 17.5H20"/><path d="M5 6.5h.01M5 12h.01M5 17.5h.01" stroke-width="2.6"/></svg></button>
     <button type="button" class="ib ib-sec" data-tab="urzadzenia" aria-label="Ustawienia: urządzenia, przypomnienia, kolory"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4 1a7.7 7.7 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.7 7.7 0 0 0 7 6.5l-2.4-1-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-1a7.7 7.7 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.7 7.7 0 0 0 2.6-1.5l2.4 1 2-3.4z"/></svg><i class="dot" aria-hidden="true"></i></button>
     <button type="button" class="ib" data-refresh aria-label="Odśwież dane"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4.2h-4.2"/></svg></button>
     <a class="ib" id="abSheet" href="#" target="_blank" rel="noopener" aria-label="Otwórz arkusz" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2.5"/><path d="M4 9.5h16M4 15h16M10 9.5V20"/></svg></a>
@@ -117,6 +118,13 @@
   <p class="err" id="payErr" role="alert"></p>
   <button class="save" id="paySave" type="button">Zapisz płatność</button>
   <button class="danger" id="payDelete" type="button" hidden>Usuń płatność</button>
+</section>
+<section class="sheet" id="formSheet" role="dialog" aria-modal="true" aria-labelledby="formTitle" hidden>
+  <div class="grab" aria-hidden="true"></div>
+  <div class="sheet-head"><h2 id="formTitle"></h2><button type="button" class="x" data-close aria-label="Zamknij">✕</button></div>
+  <div id="formBody"></div>
+  <p class="err" id="formErr" role="alert"></p>
+  <button class="save" id="formSave" type="button"></button>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
