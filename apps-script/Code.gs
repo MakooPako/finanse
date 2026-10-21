@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '16',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '17',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -88,7 +88,7 @@ function doPost(e) {
       confirmDevice: function (arg) { return withDevices_(who, confirmDevice_(arg)); },
       editEntry: editEntry, saveColors: saveColors, saveReminders: saveReminders, subAnswer: subAnswer,
       saveBalances: saveBalances, transferBetween: transferBetween, repayLoan: repayLoan, undoAccountOp: undoAccountOp, saveAccount: saveAccount,
-      saveDebt: saveDebt, deleteDebt: deleteDebt, saveAccountColors: saveAccountColors,
+      saveDebt: saveDebt, deleteDebt: deleteDebt, saveAccountColors: saveAccountColors, saveGoal: saveGoal, deleteGoal: deleteGoal,
       removeDevice: function (arg) { return withDevices_(who, removeDevice_(arg, who)); }
     };
     if (!Object.prototype.hasOwnProperty.call(actions, req.fn)) return apiJson_({ ok: false, error: 'Nieznana operacja.' });
@@ -1904,7 +1904,7 @@ const ACC_KINDS = ['bieżące', 'oszczędnościowe', 'walutowe', 'gotówka', 'in
 const ACC_ROLES = ['wpływy', 'na co dzień', 'oszczędności', ''];
 
 function parseAccounts_(v) {
-  const out = { accounts: [], loans: [], installments: [], sectionRows: {} };
+  const out = { accounts: [], loans: [], installments: [], goals: [], sectionRows: {} };
   if (!v) return out;
   let section = null;
   for (let r = 0; r < v.length; r++) {
@@ -1913,6 +1913,7 @@ function parseAccounts_(v) {
     if (a === 'KONTA') { section = 'acc'; out.sectionRows.acc = r + 1; continue; }
     if (a === 'POŻYCZKI') { section = 'loan'; out.sectionRows.loan = r + 1; continue; }
     if (a === 'RATY') { section = 'inst'; out.sectionRows.inst = r + 1; continue; }
+    if (a === 'CELE') { section = 'goal'; out.sectionRows.goal = r + 1; continue; }
     if (a === 'NAZWA') continue;
     const name = String(v[r][0]).trim();
     if (section === 'acc') {
@@ -1924,6 +1925,12 @@ function parseAccounts_(v) {
       const amount = toNum_(v[r][1]);
       if (amount === null) continue;
       out.loans.push({ row: r + 1, name: name, amount: amount, lender: String(v[r][2] || '').trim(), since: parseDate_(v[r][3]), note: String(v[r][4] || '').trim() });
+    } else if (section === 'goal') {
+      // CELE: Nazwa | Kwota (zł) | Termin (RRRR-MM-DD, opcjonalnie) | Uwagi. Na razie aplikacja używa pierwszego celu.
+      const amount = toNum_(v[r][1]);
+      if (amount === null || !(amount > 0)) continue;
+      const due = parseDate_(v[r][2]);
+      out.goals.push({ row: r + 1, name: name, amount: amount, deadline: due ? dateStr_(due) : '', note: String(v[r][3] || '').trim() });
     } else if (section === 'inst') {
       // RATY: Nazwa | Kwota łącznie | Liczba rat | Moja część (%) | Płatność w aplikacji | Spłacone rat | Stan na (RRRR-MM) | Uwagi
       const amount = toNum_(v[r][1]), count = toNum_(v[r][2]);
@@ -2058,7 +2065,7 @@ function accountsModel_(ss, model) {
   return {
     list: list, total: total, totalEst: totalEst, lastUpdate: iso(lastAt),
     daysSinceUpdate: lastAt ? Math.floor((now - lastAt) / 864e5) : null,
-    change: change, loans: loans, installments: installments, ops: ops, history: history, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
+    change: change, loans: loans, installments: installments, ops: ops, history: history, goals: A.goals, kinds: ACC_KINDS, roles: ACC_ROLES.filter(Boolean)
   };
 }
 
@@ -2208,6 +2215,52 @@ function saveAccountColors(arg) {
       if (v && !/^#[0-9a-f]{6}$/i.test(v)) throw new Error('Niepoprawny kolor dla „' + n + '”.');
       sh.getRange(a.row, 7).setValue(v.toLowerCase());
     });
+    return {};
+  });
+}
+
+const GOAL_HEADER = ['Nazwa', 'Kwota (zł)', 'Termin (RRRR-MM-DD)', 'Uwagi'];
+
+/** Cel oszczędności (suma wszystkich kont): { row?, originalName?, name, amount, deadline? }. Termin opcjonalny. */
+function saveGoal(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    if (!sh) throw new Error('Brak zakładki „' + CFG.ACCOUNTS_SHEET + '”.');
+    const A = parseAccounts_(sh.getDataRange().getValues());
+    const name = cleanText_(a.name, 50) || 'Oszczędności';
+    const amount = money_(a.amount);
+    if (!(amount > 0)) throw new Error('Wpisz kwotę celu.');
+    const due = a.deadline ? parseDate_(a.deadline) : null;
+    if (a.deadline && !due) throw new Error('Termin w formacie RRRR-MM-DD albo pusty.');
+    const row = [name, amount, due ? dateStr_(due) : '', cleanText_(a.note, 120)];
+    if (a.row) {
+      const cur = A.goals.filter(function (x) { return x.row === a.row; })[0];
+      if (!cur || cur.name !== a.originalName) throw new Error('Zakładka Konta zmieniła się w międzyczasie. Odśwież aplikację.');
+      sh.getRange(a.row, 1, 1, 4).setValues([row]);
+      sh.getRange(a.row, 3).setNumberFormat('@').setValue(row[2]);
+      return { goal: name };
+    }
+    let header = A.sectionRows.goal;
+    if (!header) {
+      const at = sh.getLastRow() + 2;
+      sh.getRange(at, 1, 2, 4).setValues([['CELE', '', '', ''], GOAL_HEADER]);
+      sh.getRange(at, 1, 2, 4).setFontWeight('bold');
+      header = at;
+    }
+    const last = A.goals.length ? Math.max.apply(null, A.goals.map(function (x) { return x.row; })) : header + 1;
+    sh.insertRowAfter(last);
+    sh.getRange(last + 1, 1, 1, 4).setValues([row]);
+    sh.getRange(last + 1, 3).setNumberFormat('@').setValue(row[2]);
+    return { goal: name };
+  });
+}
+
+function deleteGoal(arg) {
+  return withLock_(function (ss) {
+    const a = arg || {}, sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
+    const cur = parseAccounts_(sh.getDataRange().getValues()).goals.filter(function (x) { return x.row === a.row; })[0];
+    if (!cur || cur.name !== a.name) throw new Error('Zakładka Konta zmieniła się w międzyczasie. Odśwież aplikację.');
+    sh.deleteRow(a.row);
     return {};
   });
 }

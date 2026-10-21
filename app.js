@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '16';
+const CLIENT_VERSION = '17';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -741,10 +741,14 @@ function startApp(initial) {
         <div class="m-head"><h1 id="h-osz">Oszczędności</h1><span>${AC.lastUpdate ? 'salda z ' + dayOf(AC.lastUpdate) : 'brak sald'}</span></div>
         <p class="m-label">${has ? (estDiff ? 'Na kontach jest teraz około' : 'Na wszystkich kontach') : 'Wpisz salda swoich kont'}</p>
         <p class="m-big num">${has ? zl(AC.totalEst) : '—'}</p>
-        ${has ? `<div class="osz-bar" role="img" aria-label="Podział na konta">${known.filter(a => a.est > 0).map(a => `<span data-acc-bar="${esc(a.name)}" style="flex-basis:${(a.est / Math.max(1, AC.totalEst) * 100).toFixed(2)}%;background:${accColor(a.name)}" title="${esc(a.name)}: ${zl(a.est)}"></span>`).join('')}</div>
-        <div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span>${k} <b class="num">${zl(v)}</b></span>` : ''; }).join('<span class="sep">·</span>')}</div>` : ''}
+        ${has ? (() => {
+          const goal = (AC.goals || [])[0] || null, scale = Math.max(1, AC.totalEst, goal ? goal.amount : 0);
+          const segs = known.filter(a => a.est > 0).map(a => `<span data-acc-bar="${esc(a.name)}" style="flex-basis:${(a.est / scale * 100).toFixed(2)}%;background:${accColor(a.name)}" title="${esc(a.name)}: ${zl(a.est)}"></span>`).join('');
+          return `<div class="osz-bar${goal ? ' with-goal' : ''}" role="img" aria-label="${goal ? `Na kontach ${zl(AC.totalEst)} z celu ${zl(goal.amount)}` : 'Podział na konta'}">${segs}${goal && AC.totalEst > goal.amount ? `<i class="goal-tick" style="left:${(goal.amount / scale * 100).toFixed(2)}%"></i>` : ''}</div>${goal ? goalInfo(goal, AC) : ''}`;
+        })() : ''}
+        ${has ? `<div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span>${k} <b class="num">${zl(v)}</b></span>` : ''; }).filter(Boolean).join('<span class="sep">·</span>')}</div>` : ''}
         ${AC.change ? `<p class="osz-change">Od ${dayOf(AC.change.since)}: <b class="num ${AC.change.amount < 0 ? 'neg' : 'pos'}">${AC.change.amount >= 0 ? '+' : ''}${zl(AC.change.amount)}</b></p>` : ''}
-        <div class="osz-acts"><button type="button" class="pay-btn" data-acc-update>Aktualizuj salda</button><button type="button" class="pay-btn ghost" data-acc-transfer${has ? '' : ' disabled'}>Przelew między kontami</button></div>
+        <div class="osz-acts"><button type="button" class="pay-btn" data-acc-update>Aktualizuj salda</button><button type="button" class="pay-btn ghost" data-acc-transfer${has ? '' : ' disabled'}>Przelew między kontami</button>${has && !(AC.goals || []).length ? '<button type="button" class="pay-btn ghost" data-goal-edit>Ustaw cel</button>' : ''}</div>
         ${AC.daysSinceUpdate !== null && AC.daysSinceUpdate > 31 ? `<p class="warn-line osz-stale">Salda mają ${AC.daysSinceUpdate} dni. Wpisz aktualne z aplikacji banku, żeby prognoza startowała z prawdziwej kwoty.</p>` : ''}
         ${estDiff ? `<p class="osz-note">„Około”, bo od ostatniego wpisania sald doliczam wydatki i wpływy dodane w aplikacji (szczegóły przy kontach).</p>` : ''}
       </section>`;
@@ -844,7 +848,7 @@ function startApp(initial) {
         <div class="sav-points">${S0.points.map(pt => { const x = sv.S.find(y => y.ymi === pt.ymi) || pt; return `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">${sv.real ? '' : '+'}${zlR(x.cumA, x.cumB)}</b><small>${pt.quarter}</small></div>`; }).join('')}</div>
         <div class="sav-chart${sv.real ? ' stacked' : ''}" id="savChart"></div>
         <div class="legend sav-legend">${accs.map(a => `<label class="acc-sw"><i style="background:${accColor(a.name)}"><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></i>${esc(a.name)}</label>`).join('')}
-          ${sv.real ? '<span><i class="sw" style="background:var(--left);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
+          ${sv.real ? '<span><i class="sw" style="background:var(--left);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}${sv.real && AC && (AC.goals || []).length ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,#7fb4f5 0 2px,transparent 2px 6px)"></i>cel</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
         <p class="total">${sv.real ? 'Kolorowe pola to Twoje konta (wcześniejsze miesiące według wpisanych sald, dalej dzisiejsze salda). Dotknij koloru w legendzie, żeby go zmienić. ' : ''}Dotknij wykresu, żeby zobaczyć miesiąc. Nie uwzględnia wakacji ani większych jednorazowych zakupów: dodaj je w zakładce Terminy w arkuszu.</p>
         ${fcTable ? `<details class="paid-more fc-more" data-keep="fc"${OPEN_CATS.has('fc') ? ' open' : ''}><summary><span>Miesiąc po miesiącu</span><span class="chev" aria-hidden="true">▶</span></summary><div class="fc-wrap">${fcTable}</div></details>` : ''}
       </section>`;
@@ -1638,6 +1642,45 @@ function startApp(initial) {
       .concat(S0.map(x => Object.assign({}, x, { cumA: Math.round(base + x.cumA - done), cumB: Math.round(base + x.cumB - done) })));
     return { S, real: true, base };
   }
+  // kiedy prognoza (wybrany wariant) dojdzie do kwoty: { ymi, avg } albo null
+  function reachOf(target) {
+    const sv = savSeries(); if (!sv.real) return null;
+    const S = sv.S, key = VARIANT === 'B' ? 'cumB' : 'cumA', n = S.length - 1;
+    const avg = n >= 3 ? (S[n][key] - S[1][key]) / (n - 1) : 0;
+    if (sv.base >= target) return { ymi: -1, avg };
+    const hit = S.findIndex((x, i) => i > 0 && x[key] >= target);
+    if (hit > 0) return { ymi: S[hit].ymi, avg };
+    if (avg > 0) return { ymi: S[n].ymi + Math.ceil((target - S[n][key]) / avg), avg };
+    return { ymi: null, avg };
+  }
+  // stan prognozy na koniec danego miesiąca (z serii albo dalej przy średnim tempie)
+  function projectedAt(ymi) {
+    const sv = savSeries(); if (!sv.real) return null;
+    const S = sv.S, key = VARIANT === 'B' ? 'cumB' : 'cumA', n = S.length - 1;
+    const x = S.find(y => y.ymi === ymi); if (x) return x[key];
+    if (ymi < S[1].ymi) return sv.base;
+    const avg = n >= 3 ? (S[n][key] - S[1][key]) / (n - 1) : 0;
+    return S[n][key] + avg * (ymi - S[n].ymi);
+  }
+  function goalInfo(goal, AC) {
+    const total = AC.totalEst, pct = Math.round(total / goal.amount * 100), left = goal.amount - total;
+    const ymTxt = ymi => MONTHS_NOM[ymi % 12] + ' ' + Math.floor(ymi / 12);
+    let more = '';
+    if (left > 0) {
+      const r = reachOf(goal.amount);
+      if (goal.deadline) {
+        const [dy, dm] = goal.deadline.split('-').map(Number), dYmi = dy * 12 + dm - 1, curYmi = D.year * 12 + D.currentMonth;
+        const months = Math.max(1, dYmi - curYmi + (Number(goal.deadline.slice(8)) >= 28 ? 1 : 0));
+        const proj = projectedAt(dYmi), need = Math.ceil(left / months / 10) * 10;
+        more = proj !== null && proj >= goal.amount
+          ? `Do ${fmtDate(goal.deadline)} prognoza: około <b class="num">${zl(proj)}</b>, więc zdążysz${r && r.ymi ? ` (cel już około: ${ymTxt(r.ymi)})` : ''}.`
+          : `Do ${fmtDate(goal.deadline)} prognoza: około <b class="num">${zl(proj === null ? total : proj)}</b>, zabraknie około <b class="num">${zl(goal.amount - (proj === null ? total : proj))}</b>. Żeby zdążyć, odkładaj około <b class="num">${zl(need)}</b> miesięcznie${r && r.avg > 0 ? ` (dziś typowo zostaje około ${zl(r.avg)})` : ''}.`;
+      } else if (r && r.ymi) more = `Przy obecnym tempie${r.avg > 0 ? ` (około ${zl(r.avg)} miesięcznie)` : ''} cel osiągniesz około: <b>${ymTxt(r.ymi)}</b>.`;
+    }
+    return `<div class="goal-info"><div class="goal-row"><span><b>${esc(goal.name)}</b>: ${zl(total)} z ${zl(goal.amount)}</span><b class="num goal-pct">${pct}%</b></div>
+      <p class="goal-txt">${left > 0 ? `Brakuje <b class="num">${zl(left)}</b>. ` : `<b class="pos">Cel osiągnięty</b>${left < 0 ? `, <b class="num">${zl(-left)}</b> ponad cel` : ''}. `}${more}
+      <button type="button" class="edit" data-goal-edit="${goal.row}">Zmień cel</button></p></div>`;
+  }
   // konta na wykresie: widoczne, z saldem; konto oszczędności na dole, dalej od największego
   function chartAccounts() {
     const AC = D.accounts; if (!AC) return [];
@@ -1655,10 +1698,11 @@ function startApp(initial) {
     const n = pts.length - 1, now = pts.findIndex(p => p.kind === 'now');
     if (n < 1) { box.innerHTML = ''; return; }
     const debt = AC.loans.reduce((s2, l) => s2 + l.remaining, 0);
+    const goal = (AC.goals || [])[0] ? AC.goals[0].amount : 0;
     const W = box.clientWidth, H = box.clientHeight, pad = { l: 46, r: 16, t: 22, b: 26 };
     const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
     const sumV = p => p.vals.reduce((a, v) => a + v, 0);
-    const maxV = Math.max(1, debt, ...pts.map(p => Math.max(sumV(p), p.tA || 0, p.tB || 0)));
+    const maxV = Math.max(1, debt, goal, ...pts.map(p => Math.max(sumV(p), p.tA || 0, p.tB || 0)));
     const minV = Math.min(0, ...pts.map(p => Math.min(p.tA || 0, p.tB === null ? 0 : p.tB)));
     const stepV = maxV > 80000 ? 20000 : maxV > 40000 ? 10000 : 5000;
     const top = Math.ceil(maxV * 1.08 / stepV) * stepV, bot = Math.floor(minV / stepV) * stepV;
@@ -1695,6 +1739,7 @@ function startApp(initial) {
       <path d="${lineA}" fill="none" stroke="var(--left)" stroke-width="2.4"/>
       ${cps.map(i => `<circle cx="${f1(X(i))}" cy="${f1(Y(pts[i].tA))}" r="4" fill="var(--left)" stroke="var(--surface)" stroke-width="2"/>`).join('')}
       ${debt ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(debt))}" y2="${f1(Y(debt))}" stroke="var(--warning)" stroke-width="1.6" stroke-dasharray="6 4" opacity=".85"/><text x="${W - pad.r}" y="${f1(Y(debt) - 6)}" text-anchor="end" fill="var(--warning)" font-size="12">do oddania ${Math.round(debt / 1000)} tys.</text>` : ''}
+      ${goal ? `<line x1="${pad.l}" x2="${W - pad.r}" y1="${f1(Y(goal))}" y2="${f1(Y(goal))}" stroke="#7fb4f5" stroke-width="1.8" stroke-dasharray="2 4"/><text x="${pad.l + 4}" y="${f1(Y(goal) - 6)}" fill="#7fb4f5" font-size="12">cel ${zl(goal)}</text>` : ''}
       ${xl}${ev}
       <g id="savHv" style="display:none" pointer-events="none"><line id="savHvL" y1="${pad.t}" y2="${pad.t + ih}" stroke="var(--text-2)" stroke-opacity=".5"/><circle id="savHvA" r="5" fill="var(--left)" stroke="var(--surface)" stroke-width="2"/></g>
       <rect id="savHit" x="${pad.l - 10}" y="0" width="${iw + 20}" height="${H}" fill="transparent" style="cursor:crosshair"/>
@@ -2034,6 +2079,27 @@ function startApp(initial) {
         return a ? 'Zapisano zmiany konta.' : 'Dodano konto „' + esc(val('acName')) + '”. Wpisz jego saldo w „Aktualizuj salda”.';
       });
   }
+  function openGoal(row) {
+    const AC = D.accounts; if (!AC) return;
+    const g = row ? (AC.goals || []).find(x => x.row === row) : null;
+    openForm(g ? 'Zmień cel' : 'Cel oszczędności', `<p class="hint-avg">Cel liczy się z sumy wszystkich kont. Termin nie jest obowiązkowy: bez niego aplikacja pokaże, kiedy cel osiągniesz przy obecnym tempie.</p>
+      <label class="field"><span>Nazwa</span><input id="gName" maxlength="50" autocomplete="off" value="${g ? esc(g.name) : 'Oszczędności'}"></label>
+      <div class="two-col"><label class="field"><span>Kwota celu (zł)</span><input class="num-in" id="gAmount" inputmode="decimal" autocomplete="off" value="${g ? String(g.amount).replace('.', ',') : ''}" placeholder="np. 25 000"></label>
+      <label class="field"><span>Termin (opcjonalnie)</span><input class="num-in" id="gDeadline" type="date" value="${g ? esc(g.deadline) : ''}"></label></div>
+      ${g ? `<button type="button" class="danger" data-goal-del>Usuń cel</button>` : ''}`,
+      g ? 'Zapisz cel' : 'Ustaw cel', async () => {
+        await accCall('saveGoal', { row: g ? g.row : null, originalName: g ? g.name : '', name: val('gName'), amount: val('gAmount'), deadline: val('gDeadline') });
+        return 'Cel zapisany.';
+      });
+    $('formBody').onclick = async e => {
+      const del = e.target.closest('[data-goal-del]');
+      if (!del) return;
+      if (!del.dataset.armed) { del.dataset.armed = '1'; del.textContent = 'Na pewno usunąć cel?'; return; }
+      del.disabled = true;
+      try { await accCall('deleteGoal', { row: g.row, name: g.name }); hideSheet(); toast('Cel usunięty. Pasek pokazuje znowu podział kont.'); }
+      catch (er) { $('formErr').textContent = er.message || String(er); del.disabled = false; }
+    };
+  }
   function openDebt(kind, row) {
     const AC = D.accounts; if (!AC) return;
     const x = row ? (kind === 'inst' ? AC.installments : AC.loans).find(y => y.row === row) : null;
@@ -2072,6 +2138,7 @@ function startApp(initial) {
   }
   document.addEventListener('click', async e => {
     let b;
+    if ((b = e.target.closest('[data-goal-edit]'))) { openGoal(b.dataset.goalEdit ? +b.dataset.goalEdit : null); return; }
     if ((b = e.target.closest('[data-debt-edit]'))) { const [k, r] = b.dataset.debtEdit.split(':'); openDebt(k, +r); return; }
     if (e.target.closest('[data-debt-new]')) { openDebt('inst', null); return; }
     if (e.target.closest('[data-acc-update]')) openBalances();
