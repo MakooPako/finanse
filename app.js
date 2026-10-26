@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '17';
+const CLIENT_VERSION = '18';
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -39,6 +39,11 @@ function startApp(initial) {
   const ACC_PAL = ['#2f8f6b', '#5b8def', '#e0b84c', '#c0567a', '#8e7cf0', '#3fb7c9', '#d9773c', '#7c8a9e', '#9bc35a', '#e86f9e'];
   let ACC_PREVIEW = {};
   const accColor = name => { const L = (D && D.accounts && D.accounts.list) || []; const i = L.findIndex(a => a.name === name); const a = L[i]; return ACC_PREVIEW[name] || (a && a.color) || ACC_PAL[(i < 0 ? 0 : i) % ACC_PAL.length]; };
+  // kolory: #rrggbb albo #rrggbbaa (ostatnia para = krycie); przezroczystość 0–90%
+  const hex6 = c => String(c || '#5b6779').slice(0, 7);
+  const transpOf = c => (c && c.length === 9 ? Math.round(100 - parseInt(c.slice(7, 9), 16) / 255 * 100) : 0);
+  const withTransp = (c, t) => { t = Math.max(0, Math.min(90, Math.round(+t || 0))); return t === 0 ? hex6(c) : hex6(c) + Math.round((100 - t) / 100 * 255).toString(16).padStart(2, '0'); };
+  const transpCtl = (c, attr, label) => `<span class="alpha"><input type="range" min="0" max="90" step="5" value="${transpOf(c)}" ${attr} aria-label="Przezroczystość: ${label}"><output>${transpOf(c)}%</output></span>`;
   const colorOf = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
   const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
@@ -379,28 +384,31 @@ function startApp(initial) {
     const nameOf = id => D.blocks.find(b => b.id === id).name;
     const custom = D.prefs && D.prefs.colors && Object.keys(D.prefs.colors).length;
     return `<section class="panel colors" aria-labelledby="h-col"><h2 id="h-col">Kolory kategorii</h2>
-      <p class="desc">Kolory na wykresach i listach, takie same na wszystkich urządzeniach. Dotknij koloru, żeby go zmienić.</p>
+      <p class="desc">Kolory na wykresach i listach, takie same na wszystkich urządzeniach. Dotknij koloru, żeby go zmienić, a suwakiem ustaw przezroczystość.</p>
       <div class="col-prev" aria-hidden="true">${ids.map(id => `<span style="background:${col(id)}"></span>`).join('')}</div>
-      <ul class="col-list">${ids.map(id => `<li><label><input type="color" value="${col(id)}" data-color="${id}" aria-label="Kolor: ${esc(nameOf(id))}"><span>${esc(nameOf(id))}</span></label>
-        ${col(id) !== BLOCK_COLOR[id] ? `<button type="button" class="edit" data-color-reset="${id}">domyślny</button>` : ''}</li>`).join('')}</ul>
+      <ul class="col-list">${ids.map(id => `<li><div class="col-top"><label><input type="color" value="${hex6(col(id))}" data-color="${id}" aria-label="Kolor: ${esc(nameOf(id))}"><span>${esc(nameOf(id))}</span></label>
+        ${col(id) !== BLOCK_COLOR[id] ? `<button type="button" class="edit" data-color-reset="${id}">domyślny</button>` : ''}</div>${transpCtl(col(id), `data-color-alpha="${id}"`, esc(nameOf(id)))}</li>`).join('')}</ul>
       ${pairs.length ? `<p class="rem-err">Podobne kolory: ${pairs.map(p => esc(nameOf(p[0])) + ' i ' + esc(nameOf(p[1]))).join('; ')}. Na wykresie trudno będzie je odróżnić.</p>` : ''}
       <div class="dev-acts">${COLOR_DRAFT ? '<button type="button" class="btn-sm primary-sm" data-color-save>Zapisz kolory</button><button type="button" class="btn-sm" data-color-cancel>Anuluj</button>' : ''}
         ${custom && !COLOR_DRAFT ? '<button type="button" class="btn-sm" data-color-default>Przywróć domyślne</button>' : ''}</div>
       ${D.accounts && chartAccounts().length ? `<h3 class="col-h">Kolory kont</h3><p class="desc">Na wykresie „Ile będzie na kontach” i przy liście kont. Zapisują się od razu.</p>
-        <ul class="col-list">${chartAccounts().map(a => `<li><label><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><span>${esc(a.name)}</span></label></li>`).join('')}</ul>` : ''}
+        <ul class="col-list">${chartAccounts().map(a => `<li><div class="col-top"><label><input type="color" value="${hex6(accColor(a.name))}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><span>${esc(a.name)}</span></label></div>${transpCtl(accColor(a.name), `data-acc-alpha="${esc(a.name)}"`, esc(a.name))}</li>`).join('')}</ul>` : ''}
     </section>`;
   }
   // podczas wybierania (input) zmieniamy tylko podgląd, żeby nie zamknąć okna wyboru koloru; po wyborze (change) odświeżamy panel
   const colorIds = () => BLOCK_ORDER.filter(id => D.blocks.some(b => b.id === id));
   document.addEventListener('input', e => {
-    const id = e.target.dataset && e.target.dataset.color;
+    const ds = e.target.dataset || {}, id = ds.color || ds.colorAlpha;
     if (!id) return;
-    COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [id]: e.target.value });
+    const cur = (COLOR_DRAFT && COLOR_DRAFT[id]) || colorOf(id);
+    const v = ds.color ? withTransp(e.target.value, transpOf(cur)) : withTransp(cur, e.target.value);
+    if (ds.colorAlpha) { const o = e.target.nextElementSibling; if (o) o.textContent = e.target.value + '%'; }
+    COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [id]: v });
     const spans = document.querySelectorAll('.col-prev span'), ids = colorIds();
     spans.forEach((sp, i) => { sp.style.background = (COLOR_DRAFT[ids[i]]) || colorOf(ids[i]); });
   });
   document.addEventListener('change', e => {
-    if (!(e.target.dataset && e.target.dataset.color)) return;
+    if (!(e.target.dataset && (e.target.dataset.color || e.target.dataset.colorAlpha))) return;
     const box = document.querySelector('.colors');
     if (box) { const tmp = document.createElement('div'); tmp.innerHTML = colorsPanel(); box.replaceWith(tmp.firstElementChild); }
   });
@@ -770,7 +778,7 @@ function startApp(initial) {
       O += '%%PROGNOZA%%';   // prognoza stoi zaraz pod sumą, przed listą kont
       // lista kont
       const accRow = a => `<li class="acc">
-        <label class="acc-dot" style="background:${accColor(a.name)}" title="Zmień kolor"><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></label>
+        <button type="button" class="acc-dot" style="background:${accColor(a.name)}" title="Zmień kolor" data-acc-pick="${esc(a.name)}" data-acc-swatch="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></button>
         <div class="acc-b"><div class="nm">${esc(a.name)}${a.role ? ` <span class="tag tg-role">${esc(a.role)}</span>` : ''}</div>
           <div class="sub">${[a.bank, a.kind].filter(Boolean).map(esc).join(' · ')}${a.balance !== null ? ` · saldo z ${dayOf(a.asOf)}${a.est !== a.balance ? `: ${zl(a.balance)}` : ''}` : ' · brak salda'}</div>
           ${a.estNote ? `<div class="sub est">${esc(a.estNote)}</div>` : ''}
@@ -847,7 +855,7 @@ function startApp(initial) {
         ${varFigs}
         <div class="sav-points">${S0.points.map(pt => { const x = sv.S.find(y => y.ymi === pt.ymi) || pt; return `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">${sv.real ? '' : '+'}${zlR(x.cumA, x.cumB)}</b><small>${pt.quarter}</small></div>`; }).join('')}</div>
         <div class="sav-chart${sv.real ? ' stacked' : ''}" id="savChart"></div>
-        <div class="legend sav-legend">${accs.map(a => `<label class="acc-sw"><i style="background:${accColor(a.name)}"><input type="color" value="${accColor(a.name)}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"></i>${esc(a.name)}</label>`).join('')}
+        <div class="legend sav-legend">${accs.map(a => `<button type="button" class="acc-sw" data-acc-pick="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><i style="background:${accColor(a.name)}" data-acc-swatch="${esc(a.name)}"></i>${esc(a.name)}</button>`).join('')}
           ${sv.real ? '<span><i class="sw" style="background:var(--left);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}${sv.real && AC && (AC.goals || []).length ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,#7fb4f5 0 2px,transparent 2px 6px)"></i>cel</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
         <p class="total">${sv.real ? 'Kolorowe pola to Twoje konta (wcześniejsze miesiące według wpisanych sald, dalej dzisiejsze salda). Dotknij koloru w legendzie, żeby go zmienić. ' : ''}Dotknij wykresu, żeby zobaczyć miesiąc. Nie uwzględnia wakacji ani większych jednorazowych zakupów: dodaj je w zakładce Terminy w arkuszu.</p>
         ${fcTable ? `<details class="paid-more fc-more" data-keep="fc"${OPEN_CATS.has('fc') ? ' open' : ''}><summary><span>Miesiąc po miesiącu</span><span class="chev" aria-hidden="true">▶</span></summary><div class="fc-wrap">${fcTable}</div></details>` : ''}
@@ -1237,9 +1245,11 @@ function startApp(initial) {
     requestAnimationFrame(() => { el.classList.add('open'); bg.classList.add('open'); });
     document.body.style.overflow = 'hidden';
   }
+  let SHEET_CLOSE = null;   // sprzątanie po okienku (np. cofnięcie podglądu koloru)
   function hideSheet() {
     const el = openEl;
     if (!el) return;
+    if (SHEET_CLOSE) { const f = SHEET_CLOSE; SHEET_CLOSE = null; f(); }
     openEl = null;
     el.classList.remove('open'); bg.classList.remove('open');
     document.body.style.overflow = '';
@@ -1963,28 +1973,55 @@ function startApp(initial) {
   /* ================= kolory kont: podgląd na żywo, zapis po wyborze ================= */
   function paintAcc(name) {
     const c = accColor(name);
-    document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) { inp.value = c; const host = inp.closest('.acc-dot, i'); if (host) host.style.background = c; } });
+    document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) inp.value = hex6(c); });
+    document.querySelectorAll('[data-acc-swatch]').forEach(el => { if (el.dataset.accSwatch === name) el.style.background = c; });
     document.querySelectorAll('[data-acc-bar]').forEach(el => { if (el.dataset.accBar === name) el.style.background = c; });
     document.querySelectorAll('#savChart [data-band]').forEach(el => { if (el.dataset.band === name) el.setAttribute('fill', c); });
   }
+  const accValFrom = (el, n) => {   // kolor z pola koloru albo suwaka przezroczystości, drugi składnik bez zmian
+    const ds = el.dataset, cur = accColor(n);
+    if (ds.accAlpha) { const o = el.nextElementSibling; if (o) o.textContent = el.value + '%'; return withTransp(cur, el.value); }
+    return withTransp(el.value, transpOf(cur));
+  };
   document.addEventListener('input', e => {
-    const n = e.target.dataset && e.target.dataset.accColor;
+    const n = e.target.dataset && (e.target.dataset.accColor || e.target.dataset.accAlpha);
     if (!n) return;
-    ACC_PREVIEW[n] = e.target.value; paintAcc(n);
+    ACC_PREVIEW[n] = accValFrom(e.target, n); paintAcc(n);
   });
   document.addEventListener('change', async e => {
-    const n = e.target.dataset && e.target.dataset.accColor;
+    const n = e.target.dataset && (e.target.dataset.accColor || e.target.dataset.accAlpha);
     if (!n) return;
-    const v = e.target.value;
+    const v = accValFrom(e.target, n);
     ACC_PREVIEW[n] = v; paintAcc(n);
+    saveAccColor(n, v);
+  });
+  async function saveAccColor(n, v) {
     try {
       const r = await call('saveAccountColors', { colors: { [n]: v } });
       if (!r || !r.ok) throw new Error((r && r.error) || 'Nie udało się zapisać.');
       delete ACC_PREVIEW[n];
       applyModel(r.model);
       toast('Kolor „' + esc(n) + '” zapisany.');
-    } catch (err) { toast('Nie udało się zapisać koloru: ' + esc(err.message || err)); }
-  });
+    } catch (err) { delete ACC_PREVIEW[n]; paintAcc(n); toast('Nie udało się zapisać koloru: ' + esc(err.message || err)); }
+  }
+  // kropka przy koncie i kolor w legendzie: okienko z kolorem i przezroczystością, podgląd na żywo
+  function openAccColor(n) {
+    const c0 = accColor(n);
+    openForm('Kolor: ' + n, `<div class="clr-pick"><label class="field acc-color"><span>Kolor</span><input type="color" id="cpColor" value="${hex6(c0)}"></label>
+      <label class="field"><span>Przezroczystość: <output id="cpOut">${transpOf(c0)}%</output></span><input type="range" id="cpAlpha" min="0" max="90" step="5" value="${transpOf(c0)}"></label></div>
+      <div class="clr-prev" aria-hidden="true"><span id="cpPrev" style="background:${c0}"></span></div>
+      <p class="hint-avg">0% to pełny kolor. Przy większej przezroczystości przez pole prześwituje tło i warstwy pod spodem.</p>`, 'Zapisz kolor', async () => {
+      const v = withTransp($('cpColor').value, $('cpAlpha').value);
+      const r = await call('saveAccountColors', { colors: { [n]: v } });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'Nie udało się zapisać.');
+      delete ACC_PREVIEW[n]; applyModel(r.model);
+      return 'Kolor „' + esc(n) + '” zapisany.';
+    });
+    const upd = () => { const v = withTransp($('cpColor').value, $('cpAlpha').value); $('cpOut').textContent = $('cpAlpha').value + '%'; $('cpPrev').style.background = v; ACC_PREVIEW[n] = v; paintAcc(n); };
+    $('cpColor').addEventListener('input', upd); $('cpAlpha').addEventListener('input', upd);
+    SHEET_CLOSE = () => { delete ACC_PREVIEW[n]; paintAcc(n); };
+  }
+  document.addEventListener('click', e => { const b = e.target.closest('[data-acc-pick]'); if (b) { e.preventDefault(); openAccColor(b.dataset.accPick); } });
 
   /* ================= stałe opłaty: filtr ================= */
   document.addEventListener('click', e => {
@@ -1998,6 +2035,7 @@ function startApp(initial) {
   /* ================= oszczędności: formularze (salda, przelew, spłata, konto) ================= */
   const FS = { busy: false, submit: null };
   function openForm(title, html, label, submit) {
+    if (SHEET_CLOSE) { const f = SHEET_CLOSE; SHEET_CLOSE = null; f(); }
     $('formTitle').textContent = title;
     $('formBody').innerHTML = html; $('formBody').onclick = null;
     $('formErr').textContent = '';
@@ -2072,12 +2110,13 @@ function startApp(initial) {
       <label class="field"><span>Rodzaj</span><select id="acKind">${KINDS.map(k => `<option${a && a.kind === k ? ' selected' : ''}>${k}</option>`).join('')}</select></label></div>
       <label class="field"><span>Rola</span><select id="acRole">${ROLES.map(([v, t]) => `<option value="${v}"${a && a.role === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <p class="hint-avg">„Tu wpływa pensja” i „na wydatki” służą podpowiedzi, ile przelać na konto do wydatków. Każdą z tych ról ma jedno konto.</p>
-      <label class="field acc-color"><span>Kolor na wykresie</span><input type="color" id="acColor" value="${a ? accColor(a.name) : ACC_PAL[(AC.list.length) % ACC_PAL.length]}"></label>
+      ${(() => { const c = a ? accColor(a.name) : ACC_PAL[(AC.list.length) % ACC_PAL.length]; return `<div class="clr-pick"><label class="field acc-color"><span>Kolor na wykresie</span><input type="color" id="acColor" value="${hex6(c)}"></label>
+      <label class="field"><span>Przezroczystość: <output id="acOut">${transpOf(c)}%</output></span><input type="range" id="acAlpha" min="0" max="90" step="5" value="${transpOf(c)}"></label></div>`; })()}
       <label class="check"><input type="checkbox" id="acShow"${!a || a.show ? ' checked' : ''}><span>Pokazuj na liście kont</span></label>`,
       a ? 'Zapisz zmiany' : 'Dodaj konto', async () => {
-        await accCall('saveAccount', { row: a ? a.row : null, originalName: a ? a.name : '', name: val('acName'), bank: val('acBank'), kind: val('acKind'), role: $('acRole').value, show: $('acShow').checked, color: $('acColor').value });
+        await accCall('saveAccount', { row: a ? a.row : null, originalName: a ? a.name : '', name: val('acName'), bank: val('acBank'), kind: val('acKind'), role: $('acRole').value, show: $('acShow').checked, color: withTransp($('acColor').value, $('acAlpha').value) });
         return a ? 'Zapisano zmiany konta.' : 'Dodano konto „' + esc(val('acName')) + '”. Wpisz jego saldo w „Aktualizuj salda”.';
-      });
+      });    $('acAlpha').addEventListener('input', e => { $('acOut').textContent = e.target.value + '%'; });
   }
   function openGoal(row) {
     const AC = D.accounts; if (!AC) return;

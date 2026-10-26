@@ -689,3 +689,18 @@
   .goal-txt { margin: 4px 0 8px; font-size: 13.5px; color: var(--text-2); line-height: 1.45; }
   .goal-txt b { color: var(--text); } .goal-txt .pos { color: #7fd98f; }
   .goal-txt .edit { padding-left: 6px; }
+
+  /* --- v18: przezroczystość kolorów --- */
+  .col-list li { flex-direction: column; align-items: stretch; justify-content: center; gap: 2px; padding: 4px 0; }
+  .col-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .alpha { display: flex; align-items: center; gap: 8px; padding-left: 46px; }
+  .alpha input[type=range], .clr-pick input[type=range] { flex: 1; min-width: 0; accent-color: var(--focus); height: 28px; margin: 0; }
+  .alpha output { font-size: 12.5px; color: var(--muted); min-width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+  button.acc-dot { position: relative; display: block; width: 14px; height: 14px; border-radius: 4px; margin-top: 4px; padding: 0; border: 0; cursor: pointer; box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
+  button.acc-dot::after { content: ''; position: absolute; inset: -14px; }
+  button.acc-sw { background: none; border: 0; padding: 0; font: inherit; color: inherit; }
+  .clr-pick { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: end; }
+  .clr-pick output { color: var(--text); font-variant-numeric: tabular-nums; }
+  .clr-prev { margin: 4px 0 8px; height: 44px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
+    background: repeating-conic-gradient(#3a4250 0 25%, #262c36 0 50%) 0 0 / 16px 16px; }
+  .clr-prev span { display: block; height: 100%; }

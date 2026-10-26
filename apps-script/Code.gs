@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '17',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '18',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -1233,7 +1233,7 @@ function saveColors(arg) {
   const ids = CFG.BLOCKS.filter(function (b) { return b.id; }).map(function (b) { return b.id; }).concat(['other']);
   const src = (arg && arg.colors) || {};
   Object.keys(src).forEach(function (k) {
-    if (ids.indexOf(k) >= 0 && /^#[0-9a-f]{6}$/i.test(String(src[k]))) colors[k] = String(src[k]).toLowerCase();
+    if (ids.indexOf(k) >= 0 && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(String(src[k]))) colors[k] = String(src[k]).toLowerCase();
   });
   writePrefs_('UI_COLORS', colors);
   return JSON.stringify({ ok: true, model: JSON.parse(cachedModelJson_(true)) });
@@ -1920,7 +1920,7 @@ function parseAccounts_(v) {
       const role = String(v[r][3] || '').trim().toLowerCase();
       out.accounts.push({ row: r + 1, name: name, bank: String(v[r][1] || '').trim(), kind: String(v[r][2] || '').trim().toLowerCase() || 'inne',
         role: ACC_ROLES.indexOf(role) >= 0 ? role : '', show: !/^(NIE|N|NO|FALSE)$/i.test(String(v[r][4] || '').trim()), note: String(v[r][5] || '').trim(),
-        color: /^#[0-9a-f]{6}$/i.test(String(v[r][6] || '').trim()) ? String(v[r][6]).trim().toLowerCase() : '' });
+        color: /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(String(v[r][6] || '').trim()) ? String(v[r][6]).trim().toLowerCase() : '' });
     } else if (section === 'loan') {
       const amount = toNum_(v[r][1]);
       if (amount === null) continue;
@@ -2172,7 +2172,7 @@ function saveAccount(arg) {
     if (!name) throw new Error('Nadaj kontu nazwę.');
     const kind = ACC_KINDS.indexOf(a.kind) >= 0 ? a.kind : 'inne', role = ACC_ROLES.indexOf(a.role) >= 0 ? a.role : '';
     const row = [name, cleanText_(a.bank, 30), kind, role, a.show === false ? 'NIE' : 'TAK'];
-    const color = /^#[0-9a-f]{6}$/i.test(String(a.color || '')) ? String(a.color).toLowerCase() : null;
+    const color = /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(String(a.color || '')) ? String(a.color).toLowerCase() : null;
     // jedna rola „wpływy” i jedna „na co dzień”: nowa przejmuje rolę od poprzedniego konta
     const clearRole = function () { if (role === 'wpływy' || role === 'na co dzień') A.accounts.forEach(function (x) { if (x.role === role && x.row !== a.row) sh.getRange(x.row, 4).setValue(''); }); };
     if (a.row) {
@@ -2201,7 +2201,7 @@ function saveAccount(arg) {
 }
 
 
-/** Kolory kont na wykresie: { colors: { 'Nazwa konta': '#rrggbb' | '' } } – kolumna „Kolor” w zakładce Konta. */
+/** Kolory kont na wykresie: { colors: { 'Nazwa konta': '#rrggbb' | '#rrggbbaa' | '' } } (aa = krycie) – kolumna „Kolor” w zakładce Konta. */
 function saveAccountColors(arg) {
   return withLock_(function (ss) {
     const sh = ss.getSheetByName(CFG.ACCOUNTS_SHEET);
@@ -2212,7 +2212,7 @@ function saveAccountColors(arg) {
       const a = A.accounts.filter(function (x) { return x.name === n; })[0];
       if (!a) return;
       const v = String(c[n] || '');
-      if (v && !/^#[0-9a-f]{6}$/i.test(v)) throw new Error('Niepoprawny kolor dla „' + n + '”.');
+      if (v && !/^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v)) throw new Error('Niepoprawny kolor dla „' + n + '”.');
       sh.getRange(a.row, 7).setValue(v.toLowerCase());
     });
     return {};
