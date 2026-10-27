@@ -1,0 +1,184 @@
+/* Skórka „Synthwave” (v18.2). Włączana przez <html data-skin="sunset"> (skin.js, osobno na każdym urządzeniu).
+   Zachód słońca w klimacie Miami lat 80.: fiolet, róż, pomarańcz i turkus, szklane panele, słońce w paski,
+   palmy i siatka na horyzoncie. Własne grafiki, bez znaków żadnej gry. Układ bez zmian. */
+html[data-skin="sunset"] {
+  color-scheme: dark;
+  --bg: #140a26;
+  --surface: rgba(38,15,62,.78);
+  --surface-2: rgba(72,30,104,.62);
+  --line: rgba(255,130,205,.2);
+  --grid: rgba(255,130,205,.12);
+  --text: #fff4fb;
+  --text-2: #ecd2ef;
+  --muted: #c3a6d3;
+  --income: #ffd36e;
+  --expense: #ff4fa3;
+  --left: #2de2e6;
+  --left-area: #2de2e6;
+  --deficit: #ff3d6e;
+  --good: #5dffb0;
+  --warning: #ffb347;
+  --critical: #ff5577;
+  --focus: #2de2e6;
+  --pink: #ff4fa3;
+  --orange: #ff8a3d;
+  --aqua: #2de2e6;
+  --peach: #ffd36e;
+  --sun: linear-gradient(90deg, #ffb35c, #ff4fa3 70%, #d14be0);
+  --disp: "Montserrat", "Inter", system-ui, sans-serif;
+  --script: "Yellowtail", "Brush Script MT", cursive;
+}
+html[data-skin="sunset"], html[data-skin="sunset"] body { background: #140a26; }
+html[data-skin="sunset"] body { background: transparent; }
+
+/* niebo, słońce, palmy (za treścią) i siatka na horyzoncie */
+html[data-skin="sunset"] body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 140 260'%3E%3Cg fill='%230e0619'%3E%3Cpath d='M62 260 C63 205 66 150 78 92 L84 93 C73 150 71 205 72 260Z'/%3E%3Cpath d='M81 90 C62 70 36 66 6 82 C34 70 58 74 80 95Z'/%3E%3Cpath d='M81 90 C66 60 46 44 20 38 C46 52 64 66 78 94Z'/%3E%3Cpath d='M81 90 C88 58 106 42 132 42 C108 50 94 64 84 94Z'/%3E%3Cpath d='M81 90 C104 76 122 82 136 104 C118 88 102 86 84 95Z'/%3E%3Cpath d='M81 90 C78 62 84 36 94 18 C90 42 88 64 85 92Z'/%3E%3Cpath d='M81 90 C70 96 56 112 50 134 C60 114 72 102 83 95Z'/%3E%3C/g%3E%3C/svg%3E") left -38px bottom 22vh / auto 46vh no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 140 260'%3E%3Cg fill='%230e0619'%3E%3Cpath d='M62 260 C63 205 66 150 78 92 L84 93 C73 150 71 205 72 260Z'/%3E%3Cpath d='M81 90 C62 70 36 66 6 82 C34 70 58 74 80 95Z'/%3E%3Cpath d='M81 90 C66 60 46 44 20 38 C46 52 64 66 78 94Z'/%3E%3Cpath d='M81 90 C88 58 106 42 132 42 C108 50 94 64 84 94Z'/%3E%3Cpath d='M81 90 C104 76 122 82 136 104 C118 88 102 86 84 95Z'/%3E%3Cpath d='M81 90 C78 62 84 36 94 18 C90 42 88 64 85 92Z'/%3E%3Cpath d='M81 90 C70 96 56 112 50 134 C60 114 72 102 83 95Z'/%3E%3C/g%3E%3C/svg%3E") right -52px bottom 25vh / auto 34vh no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%23ffe08a'/%3E%3Cstop offset='.45' stop-color='%23ff9a4d'/%3E%3Cstop offset='.8' stop-color='%23ff4fa3'/%3E%3Cstop offset='1' stop-color='%23c43bd6'/%3E%3C/linearGradient%3E%3Cmask id='m'%3E%3Crect width='200' height='200' fill='white'/%3E%3Crect y='104' width='200' height='5' fill='black'/%3E%3Crect y='120' width='200' height='7' fill='black'/%3E%3Crect y='138' width='200' height='9' fill='black'/%3E%3Crect y='158' width='200' height='11' fill='black'/%3E%3Crect y='180' width='200' height='13' fill='black'/%3E%3C/mask%3E%3C/defs%3E%3Ccircle cx='100' cy='100' r='98' fill='url(%23g)' mask='url(%23m)'/%3E%3C/svg%3E") right 6% bottom 31vh / min(56vw, 300px) auto no-repeat,
+    linear-gradient(180deg, #24093f 0%, #3a0f52 26%, #6b1a5c 52%, #b02f6a 64%, #ff7a59 68.5%, #2a0d44 69%, #170a2c 82%, #10071f 100%);
+  opacity: .9;
+}
+html[data-skin="sunset"] body::after {
+  content: ''; position: fixed; left: -60%; right: -60%; bottom: 0; height: 31vh; z-index: -1; pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(255,79,163,.55) 1.5px, transparent 1.5px) 50% 0 / 46px 100%,
+    linear-gradient(0deg, rgba(255,79,163,.5) 1.5px, transparent 1.5px) 0 100% / 100% 30px;
+  transform: perspective(260px) rotateX(58deg); transform-origin: 50% 100%;
+  -webkit-mask-image: linear-gradient(to top, #000 15%, transparent 92%); mask-image: linear-gradient(to top, #000 15%, transparent 92%);
+}
+
+/* pasek aplikacji: neon w stylu szyldu */
+html[data-skin="sunset"] .appbar { background: linear-gradient(90deg, rgba(36,9,62,.97), rgba(74,16,82,.97)); border-bottom: 1px solid rgba(255,79,163,.45); box-shadow: 0 6px 24px rgba(255,79,163,.12); }
+html[data-skin="sunset"] .ab-title b { font-family: var(--script); font-weight: 400; font-size: 31px; line-height: 1; color: #ff7cc0; letter-spacing: .01em;
+  text-shadow: 0 0 10px rgba(255,79,163,.85), 0 0 22px rgba(255,79,163,.45), 2px 2px 0 rgba(45,226,230,.55); }
+html[data-skin="sunset"] .ab-title span { color: var(--aqua); font-style: italic; font-weight: 600; }
+html[data-skin="sunset"] .ib { color: #ffc2e2; }
+html[data-skin="sunset"] .ib:hover, html[data-skin="sunset"] .ib[aria-current="page"] { background: rgba(255,79,163,.18); color: #fff; }
+
+/* panele: szkło z różową krawędzią */
+html[data-skin="sunset"] .panel, html[data-skin="sunset"] .alerts li {
+  background: linear-gradient(160deg, rgba(56,20,88,.8), rgba(28,10,52,.84));
+  border: 1px solid rgba(255,140,210,.2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.07), 0 12px 30px rgba(8,0,24,.35);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+html[data-skin="sunset"] .hero { background: linear-gradient(160deg, rgba(56,20,88,.8), rgba(28,10,52,.84)); }
+html[data-skin="sunset"] .panel h2, html[data-skin="sunset"] .sheet-head h2 { font-family: var(--disp); font-style: italic; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  background: var(--sun); -webkit-background-clip: text; background-clip: text; color: transparent; }
+html[data-skin="sunset"] .panel .desc { color: var(--muted); }
+html[data-skin="sunset"] .alerts li { background: linear-gradient(90deg, rgba(120,24,80,.78), rgba(40,12,66,.84)); border-color: rgba(255,120,150,.35); }
+
+/* Teraz */
+html[data-skin="sunset"] .m-head h1, html[data-skin="sunset"] .sub-head h1 { font-family: var(--disp); font-style: italic; font-weight: 900; text-transform: uppercase; letter-spacing: .02em; color: #fff; text-shadow: 0 2px 0 rgba(209,75,224,.6), 0 0 18px rgba(255,79,163,.35); }
+html[data-skin="sunset"] .m-head span { color: var(--aqua); font-style: italic; font-weight: 600; }
+html[data-skin="sunset"] .m-label { color: #ffd6ec; font-weight: 600; }
+html[data-skin="sunset"] .m-big { font-family: var(--disp); font-style: italic; font-weight: 900; letter-spacing: -.01em; padding-right: .12em;
+  background: linear-gradient(180deg, #ffe7a3 0%, #ffb35c 38%, #ff4fa3 72%, #d14be0 100%); -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 0 14px rgba(255,79,163,.45)) drop-shadow(2px 3px 0 rgba(45,226,230,.35)); }
+html[data-skin="sunset"] .m-big.neg { background: linear-gradient(180deg, #ffb3c6, #ff3d6e); -webkit-background-clip: text; background-clip: text; }
+html[data-skin="sunset"] .meter, html[data-skin="sunset"] .osz-bar { background: rgba(10,4,22,.55); box-shadow: inset 0 0 0 1px rgba(255,140,210,.18); padding: 2px; height: 18px; border-radius: 99px; }
+html[data-skin="sunset"] .meter span, html[data-skin="sunset"] .osz-bar span { border-radius: 99px; }
+html[data-skin="sunset"] .meter .sp { background: linear-gradient(90deg, #ff8a3d, #ff4fa3); box-shadow: 0 0 12px rgba(255,79,163,.55); }
+html[data-skin="sunset"] .meter .rs, html[data-skin="sunset"] .k.rs { background: repeating-linear-gradient(135deg, rgba(255,79,163,.6) 0 4px, rgba(255,79,163,.15) 4px 8px); }
+html[data-skin="sunset"] .meter .lf { background: linear-gradient(90deg, #2de2e6, #7b8cff); box-shadow: 0 0 12px rgba(45,226,230,.5); }
+html[data-skin="sunset"] .k.sp { background: #ff4fa3; } html[data-skin="sunset"] .k.in { background: #2de2e6; }
+
+/* kwoty i nazwy */
+html[data-skin="sunset"] .figures .v, html[data-skin="sunset"] .m-stats b, html[data-skin="sunset"] .sav-points b, html[data-skin="sunset"] .pay .amt, html[data-skin="sunset"] .acc .amt, html[data-skin="sunset"] .log .a { font-family: var(--disp); font-weight: 800; font-style: italic; }
+html[data-skin="sunset"] .limit .name, html[data-skin="sunset"] .pay .nm, html[data-skin="sunset"] .acc .nm, html[data-skin="sunset"] .sa-top .nm { font-family: var(--disp); font-weight: 700; }
+
+/* paski */
+html[data-skin="sunset"] .track, html[data-skin="sunset"] .cat .bar, html[data-skin="sunset"] .dblock .bar { background: rgba(10,4,22,.55); box-shadow: inset 0 0 0 1px rgba(255,140,210,.14); }
+html[data-skin="sunset"] .track > span, html[data-skin="sunset"] .cat .bar span, html[data-skin="sunset"] .dblock .bar span, html[data-skin="sunset"] .sbar span { box-shadow: 0 0 10px rgba(255,140,210,.35); }
+html[data-skin="sunset"] .months span { background: rgba(120,70,160,.45); }
+html[data-skin="sunset"] .months span.warn { background: #c9862e; } html[data-skin="sunset"] .months span.over { background: #c2306b; }
+html[data-skin="sunset"] .months span.now { outline-color: var(--aqua); }
+
+/* płatności */
+html[data-skin="sunset"] .pay.st-ok .stripe { background: rgba(190,140,230,.45); }
+html[data-skin="sunset"] .pay.st-overdue .when b, html[data-skin="sunset"] .pay.st-urgent .when b { color: #ff8fb0; }
+html[data-skin="sunset"] .pay.st-paid .when b, html[data-skin="sunset"] .osz-change .pos, html[data-skin="sunset"] .goal-txt .pos, html[data-skin="sunset"] .dblock .cmp.down { color: var(--good); }
+
+/* przyciski: zachód słońca */
+html[data-skin="sunset"] .pay-btn, html[data-skin="sunset"] button.save, html[data-skin="sunset"] .btn-sm.primary-sm, html[data-skin="sunset"] .ab-add, html[data-skin="sunset"] .side-add {
+  background: linear-gradient(90deg, #ff8a3d, #ff4fa3 60%, #d14be0); color: #fff; border: 0; font-family: var(--disp); font-style: italic; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+  box-shadow: 0 6px 18px rgba(255,79,163,.38); text-shadow: 0 1px 0 rgba(90,0,60,.35);
+}
+html[data-skin="sunset"] button.save:disabled { background: #3a1a58; color: var(--muted); box-shadow: none; text-shadow: none; }
+html[data-skin="sunset"] .pay-btn.ghost, html[data-skin="sunset"] .btn-sm { background: rgba(20,8,40,.35); color: var(--aqua); border: 1px solid rgba(45,226,230,.55); font-family: var(--disp); font-weight: 700; box-shadow: none; text-shadow: none; }
+html[data-skin="sunset"] .btn-sm:hover { background: rgba(45,226,230,.12); }
+html[data-skin="sunset"] .edit, html[data-skin="sunset"] .linkish { color: #ff9fd0; text-decoration-color: rgba(255,159,208,.5); }
+html[data-skin="sunset"] .danger { color: #ff8fb0; border-color: rgba(255,85,119,.5); }
+
+/* przełączniki i zakładki */
+html[data-skin="sunset"] .seg, html[data-skin="sunset"] .seg-sm { background: rgba(10,4,22,.6); box-shadow: inset 0 0 0 1px rgba(255,140,210,.16); }
+html[data-skin="sunset"] .seg button[aria-pressed="true"], html[data-skin="sunset"] .seg-sm button[aria-pressed="true"] { background: linear-gradient(90deg, rgba(255,138,61,.35), rgba(255,79,163,.45)); color: #fff; }
+html[data-skin="sunset"] .tabs button, html[data-skin="sunset"] .dates button, html[data-skin="sunset"] .chips button, html[data-skin="sunset"] .quick button { background: rgba(72,30,104,.5); }
+html[data-skin="sunset"] .tabs button[aria-pressed="true"], html[data-skin="sunset"] .dates button[aria-pressed="true"] { background: linear-gradient(90deg, #ff8a3d, #ff4fa3); color: #fff; box-shadow: 0 4px 14px rgba(255,79,163,.35); }
+html[data-skin="sunset"] .chips button[aria-pressed="true"], html[data-skin="sunset"] .quick button[aria-pressed="true"] { background: rgba(45,226,230,.16); border-color: var(--aqua); color: #fff; box-shadow: 0 0 14px rgba(45,226,230,.3); }
+html[data-skin="sunset"] .tabs-arrow.l { background: linear-gradient(90deg, rgba(40,14,66,1) 55%, transparent); }
+html[data-skin="sunset"] .tabs-arrow.r { background: linear-gradient(270deg, rgba(40,14,66,1) 55%, transparent); }
+
+/* pola formularza */
+html[data-skin="sunset"] .field select, html[data-skin="sunset"] .field input, html[data-skin="sunset"] .search-in, html[data-skin="sunset"] .num-in, html[data-skin="sunset"] .bal-row input, html[data-skin="sunset"] .dates input, html[data-skin="sunset"] .amount {
+  background: rgba(14,5,30,.7); border-color: rgba(255,140,210,.25); }
+html[data-skin="sunset"] .amount:focus-within, html[data-skin="sunset"] .field input:focus, html[data-skin="sunset"] .search-in:focus { border-color: var(--aqua); box-shadow: 0 0 0 1px var(--aqua), 0 0 16px rgba(45,226,230,.3); outline: none; }
+html[data-skin="sunset"] .amount input { font-family: var(--disp); font-style: italic; font-weight: 900; color: #ffd36e; }
+html[data-skin="sunset"] .dsum div, html[data-skin="sunset"] .sav-points div, html[data-skin="sunset"] .pay-ctx, html[data-skin="sunset"] .dnote, html[data-skin="sunset"] .income-note, html[data-skin="sunset"] .edit-note, html[data-skin="sunset"] .pair-box { background: rgba(14,5,30,.55); box-shadow: inset 0 0 0 1px rgba(255,140,210,.14); }
+
+/* arkusz od dołu */
+html[data-skin="sunset"] .sheet { background: linear-gradient(180deg, #2c0f4a, #190a30 60%); border-top: 1px solid rgba(255,79,163,.5); box-shadow: 0 -10px 40px rgba(255,79,163,.18); }
+html[data-skin="sunset"] .sheet-bg { background: rgba(12,2,26,.62); }
+html[data-skin="sunset"] .grab { background: var(--sun); }
+html[data-skin="sunset"] .x { background: rgba(255,79,163,.15); color: #ff9fd0; }
+html[data-skin="sunset"] button.save { box-shadow: 0 -10px 18px #1d0b34, 0 6px 18px rgba(255,79,163,.38); }
+
+/* dolne menu, Dodaj jako słońce w paski */
+html[data-skin="sunset"] .tabbar { background: rgba(26,8,44,.9); border-top: 1px solid rgba(255,79,163,.4); box-shadow: 0 -8px 26px rgba(255,79,163,.1); }
+html[data-skin="sunset"] .tabbar button { color: #b99ad0; }
+html[data-skin="sunset"] .tabbar button[aria-current="page"] { color: #ff8cc6; text-shadow: 0 0 10px rgba(255,79,163,.6); }
+html[data-skin="sunset"] .tabbar button[aria-current="page"] svg { color: #ff8cc6; filter: drop-shadow(0 0 6px rgba(255,79,163,.7)); }
+html[data-skin="sunset"] .tabbar .tb-add { color: #ffd36e; }
+html[data-skin="sunset"] .tabbar .tb-add svg { color: #fff; stroke-width: 2.6;
+  background:
+    linear-gradient(180deg, transparent 58%, #1a0830 58% 62%, transparent 62% 70%, #1a0830 70% 75%, transparent 75% 83%, #1a0830 83% 89%, transparent 89%),
+    linear-gradient(180deg, #ffe08a, #ff9a4d 45%, #ff4fa3 80%, #d14be0);
+  box-shadow: 0 0 18px rgba(255,79,163,.55), 0 0 0 4px #1a0830; }
+@media (min-width: 900px) {
+  html[data-skin="sunset"] .appbar { background: linear-gradient(90deg, rgba(36,9,62,.84), rgba(74,16,82,.84)); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  html[data-skin="sunset"] .tabbar { background: none; border: 0; box-shadow: none; }
+  html[data-skin="sunset"] .tabbar button { color: #e6cdf0; font-family: var(--disp); font-weight: 700; }
+  html[data-skin="sunset"] .tabbar button[aria-current="page"] { background: linear-gradient(90deg, rgba(255,138,61,.28), rgba(255,79,163,.36)); color: #fff; }
+}
+
+/* wykresy i chmurki */
+html[data-skin="sunset"] .tip, html[data-skin="sunset"] .sav-chart .tip { background: rgba(26,8,46,.95); border: 1px solid rgba(255,79,163,.55); box-shadow: 0 10px 28px rgba(255,79,163,.22); }
+html[data-skin="sunset"] .tip .t { color: #ffd36e; }
+html[data-skin="sunset"] .goal-tick { background: var(--aqua); box-shadow: 0 0 10px var(--aqua); }
+html[data-skin="sunset"] .goal-pct { color: var(--aqua) !important; }
+
+/* drobne */
+html[data-skin="sunset"] .tag.tg-role, html[data-skin="sunset"] .tag.tg-man { color: var(--aqua); border-color: rgba(45,226,230,.45); }
+html[data-skin="sunset"] .tag.tg-auto { color: #e2a6ff; border-color: rgba(209,75,224,.5); }
+html[data-skin="sunset"] .tag.tg-in, html[data-skin="sunset"] .subs .tag { color: var(--good); border-color: rgba(93,255,176,.45); }
+html[data-skin="sunset"] .badge { color: var(--aqua); background: rgba(45,226,230,.14); }
+html[data-skin="sunset"] details.paid-more > summary small, html[data-skin="sunset"] .status-chip { background: rgba(255,79,163,.2); color: #ffc2e2; }
+html[data-skin="sunset"] .toast { background: linear-gradient(90deg, #ff8a3d, #ff4fa3 60%, #d14be0); color: #fff; box-shadow: 0 10px 28px rgba(255,79,163,.4); }
+html[data-skin="sunset"] .toast small { color: #ffe3f1; }
+html[data-skin="sunset"] .toast button { background: #1a0830; color: #fff; }
+html[data-skin="sunset"] .sub-ask { border-color: rgba(45,226,230,.5); }
+html[data-skin="sunset"] .sync { background: rgba(40,12,66,.9); }
+html[data-skin="sunset"] .skin { background: rgba(14,5,30,.6); }
+html[data-skin="sunset"] .skin[aria-pressed="true"] { border-color: #ff4fa3; box-shadow: 0 0 0 1px #ff4fa3, 0 0 18px rgba(255,79,163,.3); }
+html[data-skin="sunset"] .skin[aria-pressed="true"]::after { background: #ff4fa3; color: #fff; }
+html[data-skin="sunset"] .tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+html[data-skin="sunset"] .tax .row, html[data-skin="sunset"] .goal-row, html[data-skin="sunset"] .loan-row { flex-wrap: wrap; column-gap: 10px; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-skin="sunset"] .ab-title b { animation: sunsetFlicker 7s infinite; }
+  @keyframes sunsetFlicker { 0%, 92%, 100% { opacity: 1; } 93% { opacity: .55; } 94% { opacity: 1; } 96% { opacity: .7; } 97% { opacity: 1; } }
+}
+html[data-skin="sunset"] .seg-sm { max-width: 100%; }
+@media (max-width: 400px) { html[data-skin="sunset"] .seg-sm button { white-space: normal; line-height: 1.15; font-size: 13px; padding-left: 7px; padding-right: 7px; } }

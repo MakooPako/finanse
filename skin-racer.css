@@ -1,0 +1,204 @@
+/* Skórka „Racer” (v18.2). Włączana przez <html data-skin="racer"> (skin.js, osobno na każdym urządzeniu).
+   Jasna, retro-wyścigowa: kremowy papier, butelkowy turkus, pomarańcz i musztarda, pasy jak na malowaniu
+   wyścigówki, szerokie wersaliki z ukośnikiem w nagłówkach, karty jak plakaty z lat 70.
+   Własny styl – bez logo, napisów i postaci z jakiejkolwiek gry. Układ bez zmian. */
+html[data-skin="racer"] {
+  color-scheme: light;
+  --bg: #e9e4d9;
+  --surface: #f6f3ec;
+  --surface-2: #e2ddd1;
+  --line: rgba(31,61,71,.16);
+  --grid: rgba(31,61,71,.1);
+  --text: #1f3d47;
+  --text-2: #3e5a63;
+  --muted: #687c82;
+  --income: #2e5662;
+  --expense: #d9542b;
+  --left: #c98a1e;
+  --left-area: #e3a33a;
+  --deficit: #c0392b;
+  --good: #2f7d4f;
+  --warning: #c27a12;
+  --critical: #c0392b;
+  --focus: #d9542b;
+  --teal: #24474f;
+  --teal-2: #2e5662;
+  --orange: #d9542b;
+  --mustard: #e3a33a;
+  --cream: #f3eee4;
+  --stripes: linear-gradient(90deg, #d9542b 0 33.3%, #e3a33a 33.3% 66.6%, #2e5662 66.6%);
+  --wide: "Archivo", "DejaVu Sans", "Verdana", sans-serif;
+  --r-lg: 16px;
+  --r-sm: 10px;
+}
+html[data-skin="racer"], html[data-skin="racer"] body { background: #e9e4d9; color: var(--text); }
+html[data-skin="racer"] body { background: transparent; }
+html[data-skin="racer"] body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 1400' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M-40 980 C180 980 260 860 380 760 S640 560 1040 560' stroke='%23d9542b' stroke-width='4' opacity='.55'/%3E%3Cpath d='M-40 1000 C190 1000 275 880 395 780 S650 580 1040 580' stroke='%232e5662' stroke-width='2.5' opacity='.45'/%3E%3Cpath d='M1040 210 C820 210 760 300 640 300 S420 180 -40 230' stroke='%232e5662' stroke-width='2' opacity='.3'/%3E%3Cpath d='M120 1440 C140 1260 260 1180 420 1180 S760 1260 1040 1120' stroke='%23e3a33a' stroke-width='3' opacity='.5'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat,
+    linear-gradient(180deg, transparent 0 26%, rgba(79,138,150,.13) 26% 33%, transparent 33%),
+    radial-gradient(120% 80% at 50% 0%, #f2eee6, #e6e0d3 70%);
+}
+html[data-skin="racer"] body::after { content: ''; position: fixed; inset: 0; z-index: 60; pointer-events: none; opacity: .22; mix-blend-mode: multiply; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .12  0 0 0 0 .2  0 0 0 0 .24  0 0 0 .5 0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+/* nagłówki: szerokie wersaliki z ukośnikiem */
+html[data-skin="racer"] .panel h2, html[data-skin="racer"] .sheet-head h2 { font-family: var(--wide); font-stretch: 125%; font-weight: 900; font-size: 17px; text-transform: uppercase; letter-spacing: .02em; color: var(--text); }
+html[data-skin="racer"] .panel h2::before, html[data-skin="racer"] .sheet-head h2::before, html[data-skin="racer"] .ab-title b::before, html[data-skin="racer"] .sub-head h1::before { content: '/'; color: var(--orange); margin-right: 2px; font-style: italic; }
+
+/* pasek aplikacji: krem i pasy malowania */
+html[data-skin="racer"] .appbar { background: rgba(240,236,227,.97); border-bottom: 0; box-shadow: 0 2px 0 #e9e4d9, 0 5px 0 #d9542b, 0 7px 0 #e9e4d9, 0 9px 0 #2e5662, 0 12px 18px rgba(31,61,71,.12); }
+html[data-skin="racer"] .ab-title b { font-family: var(--wide); font-stretch: 125%; font-weight: 900; font-size: 21px; text-transform: uppercase; letter-spacing: 0; color: var(--text); }
+html[data-skin="racer"] .ab-title span { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 11.5px; letter-spacing: .08em; }
+html[data-skin="racer"] .ib { color: var(--teal); }
+html[data-skin="racer"] .ib:hover, html[data-skin="racer"] .ib[aria-current="page"] { background: var(--teal); color: var(--cream); }
+html[data-skin="racer"] .ib .dot { box-shadow: 0 0 0 2px var(--cream); }
+
+/* panele: jasne karty z cienką ramką */
+html[data-skin="racer"] .panel { background: rgba(248,246,240,.9); border: 1.5px solid rgba(31,61,71,.14); box-shadow: 0 3px 0 rgba(31,61,71,.06), 0 10px 24px rgba(31,61,71,.06); }
+html[data-skin="racer"] .hero { background: rgba(248,246,240,.9); }
+html[data-skin="racer"] .panel .desc { color: var(--muted); }
+html[data-skin="racer"] .alerts li { background: rgba(248,246,240,.95); color: var(--text-2); border: 1.5px solid rgba(31,61,71,.14); box-shadow: inset 5px 0 0 var(--orange); }
+html[data-skin="racer"] .alerts li b { color: var(--text); }
+html[data-skin="racer"] .ico { color: #fff; }
+
+/* Teraz i Oszczędności: główna karta jak plakat (turkus z pasami) */
+html[data-skin="racer"] .month { position: relative; overflow: hidden; background:
+    linear-gradient(90deg, transparent calc(100% - 64px), #d9542b calc(100% - 64px) calc(100% - 46px), #e3a33a calc(100% - 46px) calc(100% - 30px), #f3eee4 calc(100% - 30px) calc(100% - 22px), #2e5662 calc(100% - 22px)),
+    linear-gradient(160deg, #2e5662, #1f3d47);
+  border-radius: 18px; padding: 18px 80px 16px 18px; color: var(--cream); box-shadow: 0 10px 26px rgba(31,61,71,.25); }
+html[data-skin="racer"] .month::after { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: soft-light;
+  background: radial-gradient(circle, rgba(255,255,255,.5) 0 1px, transparent 1.4px) 0 0 / 6px 6px; }
+html[data-skin="racer"] .m-head h1 { font-family: var(--wide); font-stretch: 125%; font-weight: 900; font-size: 22px; text-transform: uppercase; color: var(--cream); }
+html[data-skin="racer"] .m-head span { color: #f0c27a; font-weight: 700; text-transform: uppercase; font-size: 12px; letter-spacing: .08em; }
+html[data-skin="racer"] .m-label { color: #cfe0e2; font-weight: 600; }
+html[data-skin="racer"] .m-big { font-family: var(--wide); font-stretch: 125%; font-weight: 900; color: var(--cream); letter-spacing: -.01em; text-shadow: 3px 3px 0 #d9542b; }
+html[data-skin="racer"] .m-big.neg { color: #ffd2c4; text-shadow: 3px 3px 0 #8f2a1d; }
+html[data-skin="racer"] .meter, html[data-skin="racer"] .osz-bar { background: rgba(0,0,0,.22); border-radius: 99px; padding: 3px; height: 18px; }
+html[data-skin="racer"] .meter span, html[data-skin="racer"] .osz-bar span { border-radius: 99px; }
+html[data-skin="racer"] .meter .sp { background: #d9542b; }
+html[data-skin="racer"] .meter .rs, html[data-skin="racer"] .k.rs { background: repeating-linear-gradient(135deg, rgba(217,84,43,.85) 0 4px, rgba(217,84,43,.3) 4px 8px); }
+html[data-skin="racer"] .meter .lf, html[data-skin="racer"] .k.in { background: #e3a33a; }
+html[data-skin="racer"] .k.sp { background: #d9542b; }
+html[data-skin="racer"] .m-stats span { color: #cfe0e2; text-transform: uppercase; font-size: 12px; letter-spacing: .06em; font-weight: 600; }
+html[data-skin="racer"] .m-stats b, html[data-skin="racer"] .month b { color: var(--cream); }
+html[data-skin="racer"] .month .edit, html[data-skin="racer"] .month .linkish { color: #f0c27a; }
+html[data-skin="racer"] .month .osz-legend, html[data-skin="racer"] .month .osz-change, html[data-skin="racer"] .month .goal-row, html[data-skin="racer"] .month .goal-txt, html[data-skin="racer"] .month .osz-note { color: #cfe0e2; }
+html[data-skin="racer"] .month .osz-change .pos, html[data-skin="racer"] .month .goal-txt .pos { color: #9be3b4; }
+html[data-skin="racer"] .month .goal-pct { color: #f0c27a !important; }
+html[data-skin="racer"] .month .btn-sm { background: rgba(243,238,228,.12); color: var(--cream); border-color: rgba(243,238,228,.45); }
+html[data-skin="racer"] .month .btn-sm.primary-sm, html[data-skin="racer"] .month [data-acc-update] { background: #d9542b; border-color: #d9542b; color: #fff; }
+
+/* liczby i nazwy */
+html[data-skin="racer"] .figures .v, html[data-skin="racer"] .m-stats b, html[data-skin="racer"] .sav-points b, html[data-skin="racer"] .pay .amt, html[data-skin="racer"] .acc .amt, html[data-skin="racer"] .log .a, html[data-skin="racer"] .cat .row b, html[data-skin="racer"] .dsum b { font-family: var(--wide); font-stretch: 112%; font-weight: 800; }
+html[data-skin="racer"] .limit .name, html[data-skin="racer"] .pay .nm, html[data-skin="racer"] .acc .nm, html[data-skin="racer"] .sa-top .nm, html[data-skin="racer"] .log .c b { font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; font-size: 14.5px; letter-spacing: .01em; }
+
+/* paski */
+html[data-skin="racer"] .track, html[data-skin="racer"] .cat .bar, html[data-skin="racer"] .dblock .bar { background: #ddd7ca; }
+html[data-skin="racer"] .track > u { background: var(--surface); }
+html[data-skin="racer"] .months span { background: #cfc8b9; }
+html[data-skin="racer"] .months span.warn { background: #e3a33a; } html[data-skin="racer"] .months span.over { background: #d9542b; }
+html[data-skin="racer"] .months span.now { outline-color: var(--teal); }
+
+/* płatności */
+html[data-skin="racer"] .pay.st-ok .stripe { background: #b9b2a3; }
+html[data-skin="racer"] .pay.st-overdue .when b, html[data-skin="racer"] .pay.st-urgent .when b { color: var(--critical); }
+html[data-skin="racer"] .pay.st-paid .when b, html[data-skin="racer"] .osz-change .pos, html[data-skin="racer"] .goal-txt .pos, html[data-skin="racer"] .dblock .cmp.down { color: var(--good); }
+html[data-skin="racer"] .dblock .cmp.up, html[data-skin="racer"] .osz-change .neg { color: var(--critical); }
+
+/* przyciski: turkusowe pigułki jak „Kontynuuj”, wersaliki */
+html[data-skin="racer"] .pay-btn, html[data-skin="racer"] button.save, html[data-skin="racer"] .btn-sm.primary-sm, html[data-skin="racer"] .ab-add, html[data-skin="racer"] .side-add {
+  background: var(--teal); color: var(--cream); border: 0; border-radius: 99px; font-family: var(--wide); font-stretch: 118%; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  box-shadow: inset 0 0 0 2px rgba(243,238,228,.12), 0 3px 0 #16303a; }
+html[data-skin="racer"] .pay-btn:hover, html[data-skin="racer"] .ab-add:hover { background: #2e5662; }
+html[data-skin="racer"] button.save:disabled { background: #d6d0c3; color: #8a948f; box-shadow: none; }
+html[data-skin="racer"] button.save { box-shadow: inset 0 0 0 2px rgba(243,238,228,.12), 0 -10px 18px var(--surface); }
+html[data-skin="racer"] .pay-btn.ghost, html[data-skin="racer"] .btn-sm { background: transparent; color: var(--teal); border: 1.5px solid rgba(31,61,71,.4); border-radius: 99px; font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; font-size: 12.5px; letter-spacing: .02em; box-shadow: none; }
+html[data-skin="racer"] .btn-sm:hover { border-color: var(--teal); background: rgba(31,61,71,.06); }
+html[data-skin="racer"] .edit, html[data-skin="racer"] .linkish { color: var(--orange); text-decoration-color: rgba(217,84,43,.45); }
+html[data-skin="racer"] .danger { color: var(--critical); border-color: rgba(192,57,43,.45); }
+html[data-skin="racer"] .danger[data-armed], html[data-skin="racer"] .log .u[data-armed], html[data-skin="racer"] .btn-sm.warn-sm[data-armed] { background: rgba(192,57,43,.1); color: var(--critical); }
+html[data-skin="racer"] .btn-sm.warn-sm, html[data-skin="racer"] .edit.warn-txt { color: var(--critical); }
+
+/* przełączniki: pomarańczowa pigułka jak wybrana zakładka menu */
+html[data-skin="racer"] .seg, html[data-skin="racer"] .seg-sm { background: #ddd7ca; }
+html[data-skin="racer"] .seg button, html[data-skin="racer"] .seg-sm button, html[data-skin="racer"] .tabs button, html[data-skin="racer"] .dates button, html[data-skin="racer"] .chips button { color: var(--text-2); font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; font-size: 12.5px; }
+html[data-skin="racer"] .seg button[aria-pressed="true"], html[data-skin="racer"] .seg-sm button[aria-pressed="true"], html[data-skin="racer"] .tabs button[aria-pressed="true"], html[data-skin="racer"] .dates button[aria-pressed="true"] { background: var(--orange); color: #fff; box-shadow: 0 2px 0 #a63c1c; }
+html[data-skin="racer"] .tabs button, html[data-skin="racer"] .dates button, html[data-skin="racer"] .chips button { background: #e2ddd1; }
+html[data-skin="racer"] .chips button[aria-pressed="true"], html[data-skin="racer"] .quick button[aria-pressed="true"] { background: rgba(217,84,43,.1); border-color: var(--orange); color: var(--text); }
+html[data-skin="racer"] .quick button { background: #e7e2d6; color: var(--text); border-radius: 14px; font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; font-size: 12.5px; }
+html[data-skin="racer"] .tabs-arrow { color: var(--text); }
+html[data-skin="racer"] .tabs-arrow span { background: var(--surface); }
+html[data-skin="racer"] .tabs-arrow.l { background: linear-gradient(90deg, #f7f5ef 55%, transparent); }
+html[data-skin="racer"] .tabs-arrow.r { background: linear-gradient(270deg, #f7f5ef 55%, transparent); }
+
+/* formularze */
+html[data-skin="racer"] .field select, html[data-skin="racer"] .field input, html[data-skin="racer"] .search-in, html[data-skin="racer"] .num-in, html[data-skin="racer"] .bal-row input, html[data-skin="racer"] .dates input, html[data-skin="racer"] .amount, html[data-skin="racer"] .dev-rename input {
+  background: #fbf9f4; color: var(--text); border: 1.5px solid rgba(31,61,71,.2); }
+html[data-skin="racer"] .amount:focus-within, html[data-skin="racer"] .field input:focus, html[data-skin="racer"] .search-in:focus { border-color: var(--orange); outline: none; box-shadow: 0 0 0 3px rgba(217,84,43,.15); }
+html[data-skin="racer"] .amount input { color: var(--text); font-family: var(--wide); font-stretch: 118%; font-weight: 900; }
+html[data-skin="racer"] .field > span, html[data-skin="racer"] .dsum span, html[data-skin="racer"] .sav-points span { text-transform: uppercase; font-weight: 700; font-size: 11.5px; letter-spacing: .06em; color: var(--muted); }
+html[data-skin="racer"] .dsum div, html[data-skin="racer"] .sav-points div, html[data-skin="racer"] .pay-ctx, html[data-skin="racer"] .dnote, html[data-skin="racer"] .income-note, html[data-skin="racer"] .edit-note, html[data-skin="racer"] .pair-box { background: #ece7dc; color: var(--text-2); }
+html[data-skin="racer"] .sav-points div:hover { background: #e2ddd1; }
+html[data-skin="racer"] .check input, html[data-skin="racer"] .pay-auto input, html[data-skin="racer"] .alpha input[type=range], html[data-skin="racer"] .clr-pick input[type=range] { accent-color: var(--orange); }
+
+/* arkusz od dołu */
+html[data-skin="racer"] .sheet { background: #f3efe6; box-shadow: 0 -12px 34px rgba(31,61,71,.22); border-top: 6px solid transparent; border-image: var(--stripes) 6 0 0 0; }
+html[data-skin="racer"] .sheet-bg { background: rgba(31,61,71,.42); }
+html[data-skin="racer"] .grab { background: rgba(31,61,71,.25); }
+html[data-skin="racer"] .x { background: #e2ddd1; color: var(--text); }
+
+/* dolne menu: turkus z pasami, Dodaj jako pomarańczowy znaczek */
+html[data-skin="racer"] .tabbar { background: var(--teal); border-top: 0; box-shadow: 0 -3px 0 #2e5662, 0 -6px 0 #e3a33a, 0 -9px 0 #d9542b, 0 -14px 24px rgba(31,61,71,.18); }
+html[data-skin="racer"] .tabbar button { color: #a9c3c7; font-weight: 700; }
+html[data-skin="racer"] .tabbar button[aria-current="page"] { color: #fff; }
+html[data-skin="racer"] .tabbar button[aria-current="page"] svg { color: #fff; background: var(--orange); border-radius: 99px; padding: 3px 12px; width: 46px; height: 28px; margin: -3px 0; }
+html[data-skin="racer"] .tabbar .tb-add { color: #f0c27a; }
+html[data-skin="racer"] .tabbar .tb-add svg { background: var(--orange); color: #fff; box-shadow: 0 0 0 4px var(--cream), 0 0 0 7px var(--teal), 0 6px 14px rgba(0,0,0,.3); }
+html[data-skin="racer"] .tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (min-width: 900px) {
+  html[data-skin="racer"] .tabbar { background: none; box-shadow: none; }
+  html[data-skin="racer"] .tabbar button { color: var(--text-2); font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; font-size: 13px; }
+  html[data-skin="racer"] .tabbar button:hover { background: rgba(31,61,71,.07); color: var(--text); }
+  html[data-skin="racer"] .tabbar button[aria-current="page"] { background: var(--orange); color: #fff; }
+  html[data-skin="racer"] .tabbar button[aria-current="page"] svg { background: none; padding: 0; width: 19px; height: 19px; margin: 0; }
+}
+
+/* wykresy i chmurki */
+html[data-skin="racer"] .tip, html[data-skin="racer"] .sav-chart .tip { background: rgba(248,246,240,.97); border: 1.5px solid rgba(31,61,71,.25); box-shadow: 0 10px 24px rgba(31,61,71,.18); color: var(--text-2); }
+html[data-skin="racer"] .tip .t { color: var(--text); font-family: var(--wide); font-stretch: 112%; font-weight: 800; text-transform: uppercase; }
+html[data-skin="racer"] .goal-tick { background: var(--teal); box-shadow: 0 0 0 2px var(--cream); }
+
+/* kolory z ciemnego motywu przestawione na jasne tło */
+html[data-skin="racer"] .err, html[data-skin="racer"] .warn-line, html[data-skin="racer"] .log .c small.tag.err, html[data-skin="racer"] .limit.st-over .state, html[data-skin="racer"] .dev-events .ev-blocked, html[data-skin="racer"] .dev-events .ev-pair_fail { color: var(--critical) !important; }
+html[data-skin="racer"] .rem-err { color: #8f2a1d; background: rgba(192,57,43,.1); }
+html[data-skin="racer"] .log .c small.tag { color: var(--warning); }
+html[data-skin="racer"] .log .c small.tag.wait, html[data-skin="racer"] .dev.me .dev-ico { color: var(--teal-2); }
+html[data-skin="racer"] .tag.tg-role, html[data-skin="racer"] .tag.tg-man { color: var(--teal-2); border-color: rgba(46,86,98,.45); }
+html[data-skin="racer"] .tag.tg-auto { color: #8a4fb0; border-color: rgba(138,79,176,.45); }
+html[data-skin="racer"] .tag.tg-in, html[data-skin="racer"] .subs .tag { color: var(--good); border-color: rgba(47,125,79,.45); }
+html[data-skin="racer"] .badge { color: #fff; background: var(--teal-2); }
+html[data-skin="racer"] details.paid-more > summary small, html[data-skin="racer"] .status-chip { background: var(--teal); color: var(--cream); }
+html[data-skin="racer"] .toast { background: var(--teal); color: var(--cream); box-shadow: 0 10px 26px rgba(31,61,71,.35); }
+html[data-skin="racer"] .toast small { color: #bcd2d5; }
+html[data-skin="racer"] .toast button { background: var(--orange); color: #fff; }
+html[data-skin="racer"] .sync { background: #f0ece3; color: var(--text-2); }
+html[data-skin="racer"] .sync.err { background: #f6dcd5; color: #8f2a1d; }
+html[data-skin="racer"] .sub-ask { border: 1.5px solid var(--orange); }
+html[data-skin="racer"] .osz-tip.short { border-color: var(--warning); }
+html[data-skin="racer"] .osz-tip.ok h2 { color: var(--good); }
+html[data-skin="racer"] .dev-ico { background: #e2ddd1; }
+html[data-skin="racer"] .col-list input[type=color], html[data-skin="racer"] .acc-color input { background: #fbf9f4; }
+html[data-skin="racer"] .clr-prev { background: repeating-conic-gradient(#d6d0c3 0 25%, #f3efe6 0 50%) 0 0 / 16px 16px; }
+html[data-skin="racer"] .acc-dot, html[data-skin="racer"] .acc-sw i { box-shadow: 0 0 0 1px rgba(31,61,71,.2); }
+html[data-skin="racer"] .skin { background: #fbf9f4; }
+html[data-skin="racer"] .skin b { font-family: var(--wide); font-stretch: 118%; font-weight: 900; text-transform: uppercase; font-size: 14px; }
+html[data-skin="racer"] .skin[aria-pressed="true"] { border-color: var(--orange); box-shadow: 0 0 0 1.5px var(--orange); }
+html[data-skin="racer"] .skin[aria-pressed="true"]::after { background: var(--orange); color: #fff; }
+html[data-skin="racer"] .tax .row, html[data-skin="racer"] .goal-row, html[data-skin="racer"] .loan-row { flex-wrap: wrap; column-gap: 10px; }
+html[data-skin="racer"] .m-head { flex-wrap: wrap; row-gap: 2px; }
+html[data-skin="racer"] .seg-sm { max-width: 100%; }
+@media (max-width: 480px) { html[data-skin="racer"] .seg-sm button { white-space: normal; line-height: 1.15; font-size: 11.5px; padding-left: 7px; padding-right: 7px; } }
+html[data-skin="racer"] .month .pay-btn.ghost, html[data-skin="racer"] .month .btn-sm { background: rgba(243,238,228,.1); color: var(--cream); border: 1.5px solid rgba(243,238,228,.5); }
+html[data-skin="racer"] .osz-tip.ok h2 { color: var(--text); }
+html[data-skin="racer"] .sub-head h1 { font-family: var(--wide); font-stretch: 125%; font-weight: 900; text-transform: uppercase; }

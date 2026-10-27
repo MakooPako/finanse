@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.1';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.2';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -48,20 +48,23 @@ function startApp(initial) {
   const colorRaw = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
   // skórka Neon: te same kolory, tylko „neonowe” – pełne nasycenie i jasność około 58% (przezroczystość bez zmian)
   const NEON_CACHE = {};
-  function neonize(c) {
-    if (NEON_CACHE[c]) return NEON_CACHE[c];
+  function neonize(c, mode) {
+    const key = mode + c;
+    if (NEON_CACHE[key]) return NEON_CACHE[key];
     const [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
     let h = 0;
     if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
     h = (h * 60 + 360) % 360;
     const l0 = (mx + mn) / 2, s0 = d ? d / (1 - Math.abs(2 * l0 - 1)) : 0;
-    const S = s0 < 0.12 ? s0 : 1, L = s0 < 0.12 ? Math.max(0.62, l0) : (h > 40 && h < 75 ? 0.52 : 0.58);
+    // Neon: pełne nasycenie; Synthwave: jaśniejsze, pastelowe; Wyścig: ciemniejsze, plakatowe (na jasnym tle)
+    const P = { neon: [1, 0.58, 0.52], sunset: [0.92, 0.66, 0.6], racer: [0.6, 0.44, 0.46] }[mode] || [1, 0.58, 0.52];
+    const S = s0 < 0.12 ? s0 : P[0], L = s0 < 0.12 ? Math.max(0.62, l0) : (h > 40 && h < 75 ? P[2] : P[1]);
     const k = n => (n + h / 30) % 12, a = S * Math.min(L, 1 - L);
     const f = n => Math.round((L - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))) * 255).toString(16).padStart(2, '0');
-    return (NEON_CACHE[c] = '#' + f(0) + f(8) + f(4) + (c.length === 9 ? c.slice(7, 9) : ''));
+    return (NEON_CACHE[key] = '#' + f(0) + f(8) + f(4) + (c.length === 9 ? c.slice(7, 9) : ''));
   }
-  const skinCol = c => (window.SKIN === 'neon' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) ? neonize(c.toLowerCase()) : c);
+  const skinCol = c => ((window.SKIN === 'neon' || window.SKIN === 'sunset' || window.SKIN === 'racer') && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) ? neonize(c.toLowerCase(), window.SKIN) : c);
   const colorOf = id => skinCol(colorRaw(id));
   const accColor = name => skinCol(accColorRaw(name));
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
@@ -391,7 +394,9 @@ function startApp(initial) {
   /* ================= ustawienia: wygląd (skórka), osobno na każdym urządzeniu ================= */
   const SKINS = [
     { id: 'classic', name: 'Klasyczny', note: 'granatowy, obecny', pv: '<div class="pv pv-classic"><s></s><i></i><i></i><em><span></span><span></span></em></div>' },
-    { id: 'neon', name: 'Neon', note: 'cyberpunk', pv: '<div class="pv pv-neon"><s></s><i></i><i></i><em><span></span><span></span></em></div>' }
+    { id: 'neon', name: 'Neon', note: 'cyberpunk', pv: '<div class="pv pv-neon"><s></s><i></i><i></i><em><span></span><span></span></em></div>' },
+    { id: 'sunset', name: 'Synthwave', note: 'zachód słońca, lata 80.', pv: '<div class="pv pv-sunset"><b></b><s></s><i></i><em><span></span><span></span></em></div>' },
+    { id: 'racer', name: 'Racer', note: 'jasny, retro wyścig', pv: '<div class="pv pv-racer"><s></s><i></i><em><span></span><span></span></em></div>' }
   ];
   function skinPanel() {
     const cur = window.SKIN || 'classic';
@@ -405,7 +410,7 @@ function startApp(initial) {
     if (!b || !window.setSkin) return;
     const v = window.setSkin(b.dataset.skinSet);
     rerender();
-    toast(v === 'neon' ? 'Włączono skórkę Neon na tym urządzeniu.' : 'Przywrócono klasyczny wygląd na tym urządzeniu.');
+    toast(v === 'classic' ? 'Przywrócono klasyczny wygląd na tym urządzeniu.' : 'Włączono skórkę ' + (SKINS.find(k => k.id === v) || {}).name + ' na tym urządzeniu.');
   });
 
   /* ================= ustawienia: kolory kategorii ================= */
@@ -2049,7 +2054,7 @@ function startApp(initial) {
     openForm('Kolor: ' + n, `<div class="clr-pick"><label class="field acc-color"><span>Kolor</span><input type="color" id="cpColor" value="${hex6(c0)}"></label>
       <label class="field"><span>Przezroczystość: <output id="cpOut">${transpOf(c0)}%</output></span><input type="range" id="cpAlpha" min="0" max="90" step="5" value="${transpOf(c0)}"></label></div>
       <div class="clr-prev" aria-hidden="true"><span id="cpPrev" style="background:${skinCol(c0)}"></span></div>
-      ${window.SKIN === 'neon' ? '<p class="hint-avg">W skórce Neon kolor jest automatycznie rozjaśniony do neonowego; zapisuje się ten wybrany tutaj.</p>' : ''}
+      ${window.SKIN && window.SKIN !== 'classic' ? '<p class="hint-avg">W tej skórce kolor jest automatycznie rozjaśniony; zapisuje się ten wybrany tutaj.</p>' : ''}
       <p class="hint-avg">0% to pełny kolor. Przy większej przezroczystości przez pole prześwituje tło i warstwy pod spodem.</p>`, 'Zapisz kolor', async () => {
       const v = withTransp($('cpColor').value, $('cpAlpha').value);
       const r = await call('saveAccountColors', { colors: { [n]: v } });

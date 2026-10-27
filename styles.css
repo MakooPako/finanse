@@ -727,3 +727,18 @@
   .pv-neon em { position: absolute; left: 14px; top: 70px; right: 14px; height: 10px; display: flex; gap: 2px; }
   .pv-neon em span { flex: 1; } .pv-neon em span:nth-child(1) { background: #ff2a6d; flex: 3; box-shadow: 0 0 8px #ff2a6d; } .pv-neon em span:nth-child(2) { background: #f3e600; flex: 4; box-shadow: 0 0 8px #f3e600; }
   .pv-neon s { position: absolute; left: 14px; top: 14px; width: 40%; height: 9px; background: #f3e600; box-shadow: -2px 0 #ff2a6d, 2px 0 #00e5ff; }
+  .pv-sunset { background: linear-gradient(180deg, #3a0f52 0%, #8a2160 48%, #ff7a59 58%, #1c0a33 59%, #120822 100%); }
+  .pv-sunset b { position: absolute; left: 50%; top: 22px; width: 56px; height: 56px; margin-left: -28px; border-radius: 50%; background: linear-gradient(180deg, #ffe08a, #ff9a4d 45%, #ff4fa3); -webkit-mask: linear-gradient(180deg, #000 60%, transparent 60% 66%, #000 66% 74%, transparent 74% 82%, #000 82%); mask: linear-gradient(180deg, #000 60%, transparent 60% 66%, #000 66% 74%, transparent 74% 82%, #000 82%); }
+  .pv-sunset s { position: absolute; left: 10px; top: 10px; width: 36%; height: 9px; background: #ff7cc0; border-radius: 3px; box-shadow: 0 0 8px #ff4fa3; }
+  .pv-sunset i { position: absolute; left: 8px; right: 8px; bottom: 6px; height: 30px; border-radius: 6px; background: rgba(56,20,88,.75); border: 1px solid rgba(255,140,210,.3); }
+  .pv-sunset em { position: absolute; left: 16px; right: 16px; bottom: 16px; height: 8px; display: flex; gap: 2px; z-index: 1; }
+  .pv-sunset em span { border-radius: 4px; } .pv-sunset em span:nth-child(1) { background: linear-gradient(90deg, #ff8a3d, #ff4fa3); flex: 3; } .pv-sunset em span:nth-child(2) { background: #2de2e6; flex: 4; box-shadow: 0 0 6px #2de2e6; }
+  @media (min-width: 560px) { .skin-list { grid-template-columns: repeat(3, 1fr); } }
+  .pv-racer { background: #e9e4d9; }
+  .pv-racer s { position: absolute; left: 8px; top: 8px; bottom: 8px; width: 46%; border-radius: 6px; background: linear-gradient(90deg, transparent 72%, #d9542b 72% 80%, #e3a33a 80% 88%, #2e5662 88%), linear-gradient(160deg, #2e5662, #1f3d47); }
+  .pv-racer i { position: absolute; right: 8px; top: 8px; width: 40%; height: 9px; background: #1f3d47; border-radius: 2px; }
+  .pv-racer i::before { content: '/'; position: absolute; left: -8px; top: -4px; color: #d9542b; font-weight: 900; font-size: 13px; }
+  .pv-racer em { position: absolute; right: 8px; bottom: 10px; width: 40%; height: 16px; border-radius: 99px; background: #24474f; display: block; }
+  .pv-racer em span { display: none; }
+  .pv-racer::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 2px; background: #d9542b; opacity: .5; }
+  @media (min-width: 560px) { .skin-list { grid-template-columns: repeat(4, 1fr); } }
