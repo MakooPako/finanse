@@ -1,4 +1,5 @@
-const CLIENT_VERSION = '18';
+const CLIENT_VERSION = '18.1';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
   let D = initial;
@@ -38,13 +39,31 @@ function startApp(initial) {
   // kolory kont (wykres „Ile będzie na kontach”, pasek sumy, lista): z zakładki Konta albo domyślne
   const ACC_PAL = ['#2f8f6b', '#5b8def', '#e0b84c', '#c0567a', '#8e7cf0', '#3fb7c9', '#d9773c', '#7c8a9e', '#9bc35a', '#e86f9e'];
   let ACC_PREVIEW = {};
-  const accColor = name => { const L = (D && D.accounts && D.accounts.list) || []; const i = L.findIndex(a => a.name === name); const a = L[i]; return ACC_PREVIEW[name] || (a && a.color) || ACC_PAL[(i < 0 ? 0 : i) % ACC_PAL.length]; };
+  const accColorRaw = name => { const L = (D && D.accounts && D.accounts.list) || []; const i = L.findIndex(a => a.name === name); const a = L[i]; return ACC_PREVIEW[name] || (a && a.color) || ACC_PAL[(i < 0 ? 0 : i) % ACC_PAL.length]; };
   // kolory: #rrggbb albo #rrggbbaa (ostatnia para = krycie); przezroczystość 0–90%
   const hex6 = c => String(c || '#5b6779').slice(0, 7);
   const transpOf = c => (c && c.length === 9 ? Math.round(100 - parseInt(c.slice(7, 9), 16) / 255 * 100) : 0);
   const withTransp = (c, t) => { t = Math.max(0, Math.min(90, Math.round(+t || 0))); return t === 0 ? hex6(c) : hex6(c) + Math.round((100 - t) / 100 * 255).toString(16).padStart(2, '0'); };
   const transpCtl = (c, attr, label) => `<span class="alpha"><input type="range" min="0" max="90" step="5" value="${transpOf(c)}" ${attr} aria-label="Przezroczystość: ${label}"><output>${transpOf(c)}%</output></span>`;
-  const colorOf = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
+  const colorRaw = id => (D && D.prefs && D.prefs.colors && D.prefs.colors[id]) || BLOCK_COLOR[id] || '#5b6779';
+  // skórka Neon: te same kolory, tylko „neonowe” – pełne nasycenie i jasność około 58% (przezroczystość bez zmian)
+  const NEON_CACHE = {};
+  function neonize(c) {
+    if (NEON_CACHE[c]) return NEON_CACHE[c];
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h = (h * 60 + 360) % 360;
+    const l0 = (mx + mn) / 2, s0 = d ? d / (1 - Math.abs(2 * l0 - 1)) : 0;
+    const S = s0 < 0.12 ? s0 : 1, L = s0 < 0.12 ? Math.max(0.62, l0) : (h > 40 && h < 75 ? 0.52 : 0.58);
+    const k = n => (n + h / 30) % 12, a = S * Math.min(L, 1 - L);
+    const f = n => Math.round((L - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))) * 255).toString(16).padStart(2, '0');
+    return (NEON_CACHE[c] = '#' + f(0) + f(8) + f(4) + (c.length === 9 ? c.slice(7, 9) : ''));
+  }
+  const skinCol = c => (window.SKIN === 'neon' && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) ? neonize(c.toLowerCase()) : c);
+  const colorOf = id => skinCol(colorRaw(id));
+  const accColor = name => skinCol(accColorRaw(name));
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
   const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
   let PREV_TAB = 'teraz';   // dokąd wraca „‹ Wróć” z ekranu Urządzenia
@@ -369,6 +388,26 @@ function startApp(initial) {
     if (e.target.id === 'remHour') saveRem({ hour: +e.target.value });
   });
 
+  /* ================= ustawienia: wygląd (skórka), osobno na każdym urządzeniu ================= */
+  const SKINS = [
+    { id: 'classic', name: 'Klasyczny', note: 'granatowy, obecny', pv: '<div class="pv pv-classic"><s></s><i></i><i></i><em><span></span><span></span></em></div>' },
+    { id: 'neon', name: 'Neon', note: 'cyberpunk', pv: '<div class="pv pv-neon"><s></s><i></i><i></i><em><span></span><span></span></em></div>' }
+  ];
+  function skinPanel() {
+    const cur = window.SKIN || 'classic';
+    return `<section class="panel" aria-labelledby="h-skin"><h2 id="h-skin">Wygląd</h2>
+      <p class="desc">Tylko na tym urządzeniu. Skórka zmienia kolory, kroje pisma i kształty; układ i dane zostają te same. Klasyczny wygląd zawsze można przywrócić.</p>
+      <div class="skin-list">${SKINS.map(k => `<button type="button" class="skin" data-skin-set="${k.id}" aria-pressed="${cur === k.id}">${k.pv}<b>${k.name}</b><small>${k.note}</small></button>`).join('')}</div>
+    </section>`;
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-skin-set]');
+    if (!b || !window.setSkin) return;
+    const v = window.setSkin(b.dataset.skinSet);
+    rerender();
+    toast(v === 'neon' ? 'Włączono skórkę Neon na tym urządzeniu.' : 'Przywrócono klasyczny wygląd na tym urządzeniu.');
+  });
+
   /* ================= ustawienia: kolory kategorii ================= */
   let COLOR_DRAFT = null;   // zmiany przed zapisem
   const hexRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
@@ -378,21 +417,21 @@ function startApp(initial) {
   }
   function colorsPanel() {
     const ids = BLOCK_ORDER.filter(id => D.blocks.some(b => b.id === id));
-    const col = id => (COLOR_DRAFT && COLOR_DRAFT[id]) || colorOf(id);
+    const col = id => (COLOR_DRAFT && COLOR_DRAFT[id]) || colorRaw(id);
     const pairs = [];
     ids.forEach((a, i) => ids.slice(i + 1).forEach(b => { if (colorDistance(col(a), col(b)) < 60) pairs.push([a, b]); }));
     const nameOf = id => D.blocks.find(b => b.id === id).name;
     const custom = D.prefs && D.prefs.colors && Object.keys(D.prefs.colors).length;
     return `<section class="panel colors" aria-labelledby="h-col"><h2 id="h-col">Kolory kategorii</h2>
       <p class="desc">Kolory na wykresach i listach, takie same na wszystkich urządzeniach. Dotknij koloru, żeby go zmienić, a suwakiem ustaw przezroczystość.</p>
-      <div class="col-prev" aria-hidden="true">${ids.map(id => `<span style="background:${col(id)}"></span>`).join('')}</div>
+      <div class="col-prev" aria-hidden="true">${ids.map(id => `<span style="background:${skinCol(col(id))}"></span>`).join('')}</div>
       <ul class="col-list">${ids.map(id => `<li><div class="col-top"><label><input type="color" value="${hex6(col(id))}" data-color="${id}" aria-label="Kolor: ${esc(nameOf(id))}"><span>${esc(nameOf(id))}</span></label>
         ${col(id) !== BLOCK_COLOR[id] ? `<button type="button" class="edit" data-color-reset="${id}">domyślny</button>` : ''}</div>${transpCtl(col(id), `data-color-alpha="${id}"`, esc(nameOf(id)))}</li>`).join('')}</ul>
       ${pairs.length ? `<p class="rem-err">Podobne kolory: ${pairs.map(p => esc(nameOf(p[0])) + ' i ' + esc(nameOf(p[1]))).join('; ')}. Na wykresie trudno będzie je odróżnić.</p>` : ''}
       <div class="dev-acts">${COLOR_DRAFT ? '<button type="button" class="btn-sm primary-sm" data-color-save>Zapisz kolory</button><button type="button" class="btn-sm" data-color-cancel>Anuluj</button>' : ''}
         ${custom && !COLOR_DRAFT ? '<button type="button" class="btn-sm" data-color-default>Przywróć domyślne</button>' : ''}</div>
       ${D.accounts && chartAccounts().length ? `<h3 class="col-h">Kolory kont</h3><p class="desc">Na wykresie „Ile będzie na kontach” i przy liście kont. Zapisują się od razu.</p>
-        <ul class="col-list">${chartAccounts().map(a => `<li><div class="col-top"><label><input type="color" value="${hex6(accColor(a.name))}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><span>${esc(a.name)}</span></label></div>${transpCtl(accColor(a.name), `data-acc-alpha="${esc(a.name)}"`, esc(a.name))}</li>`).join('')}</ul>` : ''}
+        <ul class="col-list">${chartAccounts().map(a => `<li><div class="col-top"><label><input type="color" value="${hex6(accColorRaw(a.name))}" data-acc-color="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><span>${esc(a.name)}</span></label></div>${transpCtl(accColorRaw(a.name), `data-acc-alpha="${esc(a.name)}"`, esc(a.name))}</li>`).join('')}</ul>` : ''}
     </section>`;
   }
   // podczas wybierania (input) zmieniamy tylko podgląd, żeby nie zamknąć okna wyboru koloru; po wyborze (change) odświeżamy panel
@@ -400,12 +439,12 @@ function startApp(initial) {
   document.addEventListener('input', e => {
     const ds = e.target.dataset || {}, id = ds.color || ds.colorAlpha;
     if (!id) return;
-    const cur = (COLOR_DRAFT && COLOR_DRAFT[id]) || colorOf(id);
+    const cur = (COLOR_DRAFT && COLOR_DRAFT[id]) || colorRaw(id);
     const v = ds.color ? withTransp(e.target.value, transpOf(cur)) : withTransp(cur, e.target.value);
     if (ds.colorAlpha) { const o = e.target.nextElementSibling; if (o) o.textContent = e.target.value + '%'; }
     COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [id]: v });
     const spans = document.querySelectorAll('.col-prev span'), ids = colorIds();
-    spans.forEach((sp, i) => { sp.style.background = (COLOR_DRAFT[ids[i]]) || colorOf(ids[i]); });
+    spans.forEach((sp, i) => { sp.style.background = skinCol((COLOR_DRAFT[ids[i]]) || colorRaw(ids[i])); });
   });
   document.addEventListener('change', e => {
     if (!(e.target.dataset && (e.target.dataset.color || e.target.dataset.colorAlpha))) return;
@@ -613,7 +652,7 @@ function startApp(initial) {
         (ISO ? `<button type="button" data-iso="">Pokaż wszystkie</button>` : `<span><i class="sw line" style="background:var(--text)"></i>dochód</span><span><i class="sw" style="background:var(--muted);opacity:.45"></i>jaśniej = prognoza</span>`) + taxLegend
       : `<span><i class="sw line" style="background:var(--income)"></i>dochód</span>
       <span><i class="sw line" style="background:var(--expense)"></i>wydatki</span>
-      <span><i class="sw" style="background:var(--left);opacity:.6"></i>zostaje</span>
+      <span><i class="sw" style="background:var(--left-area);opacity:.6"></i>zostaje</span>
       <span><i class="sw" style="background:var(--deficit);opacity:.6"></i>brakuje</span>
       <span><i class="dash"></i>prognoza (pasmo: ostrożnie i z premiami)</span>` + taxLegend}
     </div>
@@ -856,7 +895,7 @@ function startApp(initial) {
         <div class="sav-points">${S0.points.map(pt => { const x = sv.S.find(y => y.ymi === pt.ymi) || pt; return `<div data-sav="${pt.ymi}" role="button" tabindex="0"><span>do ${pt.date}</span><b class="num">${sv.real ? '' : '+'}${zlR(x.cumA, x.cumB)}</b><small>${pt.quarter}</small></div>`; }).join('')}</div>
         <div class="sav-chart${sv.real ? ' stacked' : ''}" id="savChart"></div>
         <div class="legend sav-legend">${accs.map(a => `<button type="button" class="acc-sw" data-acc-pick="${esc(a.name)}" aria-label="Kolor: ${esc(a.name)}"><i style="background:${accColor(a.name)}" data-acc-swatch="${esc(a.name)}"></i>${esc(a.name)}</button>`).join('')}
-          ${sv.real ? '<span><i class="sw" style="background:var(--left);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}${sv.real && AC && (AC.goals || []).length ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,#7fb4f5 0 2px,transparent 2px 6px)"></i>cel</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
+          ${sv.real ? '<span><i class="sw" style="background:var(--left-area);opacity:.45"></i>przyrost z budżetu</span>' : ''}<span><i class="sw line" style="background:var(--left)"></i>ostrożnie</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--left) 0 3px,transparent 3px 6px)"></i>z premiami</span>${sv.real && debt ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--warning) 0 5px,transparent 5px 8px)"></i>do oddania</span>' : ''}${sv.real && AC && (AC.goals || []).length ? '<span><i class="sw line" style="background:repeating-linear-gradient(90deg,#7fb4f5 0 2px,transparent 2px 6px)"></i>cel</span>' : ''}<span><i class="sw" style="background:var(--warning);border-radius:50%"></i>większy wydatek</span></div>
         <p class="total">${sv.real ? 'Kolorowe pola to Twoje konta (wcześniejsze miesiące według wpisanych sald, dalej dzisiejsze salda). Dotknij koloru w legendzie, żeby go zmienić. ' : ''}Dotknij wykresu, żeby zobaczyć miesiąc. Nie uwzględnia wakacji ani większych jednorazowych zakupów: dodaj je w zakładce Terminy w arkuszu.</p>
         ${fcTable ? `<details class="paid-more fc-more" data-keep="fc"${OPEN_CATS.has('fc') ? ' open' : ''}><summary><span>Miesiąc po miesiącu</span><span class="chev" aria-hidden="true">▶</span></summary><div class="fc-wrap">${fcTable}</div></details>` : ''}
       </section>`;
@@ -877,14 +916,14 @@ function startApp(initial) {
   }
 
   V.urzadzenia = `<div class="sub-head"><button type="button" class="linkish" data-goto="${PREV_TAB}">‹ Wróć</button><h1>Ustawienia</h1>
-      <p>Urządzenia z dostępem do arkusza, przypomnienia o płatnościach i kolory kategorii.</p></div>` + devicesPanel() + remindersPanel() + colorsPanel() +
+      <p>Wygląd, urządzenia z dostępem do arkusza, przypomnienia o płatnościach i kolory kategorii.</p></div>` + skinPanel() + devicesPanel() + remindersPanel() + colorsPanel() +
     `<section class="panel" aria-labelledby="h-acc"><h2 id="h-acc">Jak działa dostęp</h2><ul class="plain">
       <li>Każde urządzenie ma własną przepustkę. Usunięte traci dostęp od razu.</li>
       <li>Kolejne urządzenia łączysz 6-cyfrowym kodem, ważnym 5 minut i tylko raz.</li>
       <li>Główny klucz służy tylko do połączenia pierwszego urządzenia. Nowy tworzysz w Apps Script funkcją utworzKlucz.</li>
       <li>Awaryjnie funkcja odlaczWszystkieUrzadzenia w Apps Script odłącza wszystkie urządzenia naraz.</li>
     </ul><p class="total">Aplikacja v${CLIENT_VERSION}${D.version ? `, skrypt v${esc(D.version)}` : ''}.${D.sheetUrl ? ` <a href="${esc(D.sheetUrl)}" target="_blank" rel="noopener">Otwórz arkusz</a>` : ''}</p></section>`;
-  V.oszczednosci += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && D.version !== CLIENT_VERSION ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
+  V.oszczednosci += `<footer>Jak liczę prognozę: dla każdej kategorii biorę medianę z ${D.baselineMonths} ostatnich pełnych miesięcy${D.usedPrevYear ? ' (łącznie z końcówką poprzedniego roku)' : ''}. Raty pochodzą z zakładki Ustawienia, wydatki roczne (OC/AC, przegląd) z zakładki Terminy. Wakacji nie prognozuję. Podatek: skala 12% i 32% powyżej 120 000 zł dochodu, ZUS 13,71%, zdrowotna 9%, kwota zmniejszająca 300 zł; limit 30-krotności ZUS pomijam.${D.streaming ? ` Abonamenty kosztują ${zl(D.streaming.lastMonth)} miesięcznie i są wliczone w Nieistotne.` : ''}<br>Wersja v${CLIENT_VERSION}${D.version && major(D.version) !== major(CLIENT_VERSION) ? ` (skrypt v${esc(D.version)})` : ''}.</footer>`;
 
   document.getElementById('app').innerHTML = Object.keys(V).map(k => `<div class="view" data-tabview="${k}"${k === TAB ? '' : ' hidden'}>${V[k]}</div>`).join('');
 
@@ -1015,7 +1054,7 @@ function startApp(initial) {
         <clipPath id="cBelow"><path d="${belowInc}"/></clipPath>
         <clipPath id="reveal"><rect id="revealRect" x="0" y="0" width="${animated || reduceMotion ? W : 0}" height="${H}"/></clipPath>
         <mask id="fcMask"><rect x="0" y="0" width="${f1(xSplit)}" height="${H}" fill="#fff"/><rect x="${f1(xSplit)}" y="0" width="${W}" height="${H}" fill="#5a5a5a"/></mask>
-        <linearGradient id="gLeft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--left)" stop-opacity=".55"/><stop offset="1" stop-color="var(--left)" stop-opacity=".18"/></linearGradient>
+        <linearGradient id="gLeft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--left-area)" stop-opacity=".55"/><stop offset="1" stop-color="var(--left-area)" stop-opacity=".18"/></linearGradient>
         <linearGradient id="gDef" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--deficit)" stop-opacity=".65"/><stop offset="1" stop-color="var(--deficit)" stop-opacity=".3"/></linearGradient>
       </defs>
       ${grid}${fcShade}
@@ -1732,7 +1771,7 @@ function startApp(initial) {
     const key = VARIANT === 'B' ? 'tB' : 'tA';
     const fcIdx = pts.map((p, i) => i).filter(i => i >= now);
     const growTop = i => Math.max(lower[i], pts[i][key]);
-    const grow = fcIdx.length > 1 ? `<path d="M${fcIdx.map(i => f1(X(i)) + ',' + f1(Y(growTop(i)))).join('L')}L${fcIdx.slice().reverse().map(i => f1(X(i)) + ',' + f1(Y(lower[i]))).join('L')}Z" fill="var(--left)" opacity=".32"/>` : '';
+    const grow = fcIdx.length > 1 ? `<path d="M${fcIdx.map(i => f1(X(i)) + ',' + f1(Y(growTop(i)))).join('L')}L${fcIdx.slice().reverse().map(i => f1(X(i)) + ',' + f1(Y(lower[i]))).join('L')}Z" fill="var(--left-area)" opacity=".32"/>` : '';
     const lineA = 'M' + pts.map((p, i) => f1(X(i)) + ',' + f1(Y(p.tA))).join('L');
     const lineB = fcIdx.length > 1 ? 'M' + fcIdx.map(i => f1(X(i)) + ',' + f1(Y(pts[i].tB))).join('L') : '';
     const cps = D.savings.points.map(pt => pts.findIndex(p => p.ymi === pt.ymi)).filter(i => i >= 0);
@@ -1973,13 +2012,13 @@ function startApp(initial) {
   /* ================= kolory kont: podgląd na żywo, zapis po wyborze ================= */
   function paintAcc(name) {
     const c = accColor(name);
-    document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) inp.value = hex6(c); });
+    document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) inp.value = hex6(accColorRaw(name)); });
     document.querySelectorAll('[data-acc-swatch]').forEach(el => { if (el.dataset.accSwatch === name) el.style.background = c; });
     document.querySelectorAll('[data-acc-bar]').forEach(el => { if (el.dataset.accBar === name) el.style.background = c; });
     document.querySelectorAll('#savChart [data-band]').forEach(el => { if (el.dataset.band === name) el.setAttribute('fill', c); });
   }
   const accValFrom = (el, n) => {   // kolor z pola koloru albo suwaka przezroczystości, drugi składnik bez zmian
-    const ds = el.dataset, cur = accColor(n);
+    const ds = el.dataset, cur = accColorRaw(n);
     if (ds.accAlpha) { const o = el.nextElementSibling; if (o) o.textContent = el.value + '%'; return withTransp(cur, el.value); }
     return withTransp(el.value, transpOf(cur));
   };
@@ -2006,10 +2045,11 @@ function startApp(initial) {
   }
   // kropka przy koncie i kolor w legendzie: okienko z kolorem i przezroczystością, podgląd na żywo
   function openAccColor(n) {
-    const c0 = accColor(n);
+    const c0 = accColorRaw(n);
     openForm('Kolor: ' + n, `<div class="clr-pick"><label class="field acc-color"><span>Kolor</span><input type="color" id="cpColor" value="${hex6(c0)}"></label>
       <label class="field"><span>Przezroczystość: <output id="cpOut">${transpOf(c0)}%</output></span><input type="range" id="cpAlpha" min="0" max="90" step="5" value="${transpOf(c0)}"></label></div>
-      <div class="clr-prev" aria-hidden="true"><span id="cpPrev" style="background:${c0}"></span></div>
+      <div class="clr-prev" aria-hidden="true"><span id="cpPrev" style="background:${skinCol(c0)}"></span></div>
+      ${window.SKIN === 'neon' ? '<p class="hint-avg">W skórce Neon kolor jest automatycznie rozjaśniony do neonowego; zapisuje się ten wybrany tutaj.</p>' : ''}
       <p class="hint-avg">0% to pełny kolor. Przy większej przezroczystości przez pole prześwituje tło i warstwy pod spodem.</p>`, 'Zapisz kolor', async () => {
       const v = withTransp($('cpColor').value, $('cpAlpha').value);
       const r = await call('saveAccountColors', { colors: { [n]: v } });
@@ -2017,7 +2057,7 @@ function startApp(initial) {
       delete ACC_PREVIEW[n]; applyModel(r.model);
       return 'Kolor „' + esc(n) + '” zapisany.';
     });
-    const upd = () => { const v = withTransp($('cpColor').value, $('cpAlpha').value); $('cpOut').textContent = $('cpAlpha').value + '%'; $('cpPrev').style.background = v; ACC_PREVIEW[n] = v; paintAcc(n); };
+    const upd = () => { const v = withTransp($('cpColor').value, $('cpAlpha').value); $('cpOut').textContent = $('cpAlpha').value + '%'; $('cpPrev').style.background = skinCol(v); ACC_PREVIEW[n] = v; paintAcc(n); };
     $('cpColor').addEventListener('input', upd); $('cpAlpha').addEventListener('input', upd);
     SHEET_CLOSE = () => { delete ACC_PREVIEW[n]; paintAcc(n); };
   }
@@ -2110,7 +2150,7 @@ function startApp(initial) {
       <label class="field"><span>Rodzaj</span><select id="acKind">${KINDS.map(k => `<option${a && a.kind === k ? ' selected' : ''}>${k}</option>`).join('')}</select></label></div>
       <label class="field"><span>Rola</span><select id="acRole">${ROLES.map(([v, t]) => `<option value="${v}"${a && a.role === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
       <p class="hint-avg">„Tu wpływa pensja” i „na wydatki” służą podpowiedzi, ile przelać na konto do wydatków. Każdą z tych ról ma jedno konto.</p>
-      ${(() => { const c = a ? accColor(a.name) : ACC_PAL[(AC.list.length) % ACC_PAL.length]; return `<div class="clr-pick"><label class="field acc-color"><span>Kolor na wykresie</span><input type="color" id="acColor" value="${hex6(c)}"></label>
+      ${(() => { const c = a ? accColorRaw(a.name) : ACC_PAL[(AC.list.length) % ACC_PAL.length]; return `<div class="clr-pick"><label class="field acc-color"><span>Kolor na wykresie</span><input type="color" id="acColor" value="${hex6(c)}"></label>
       <label class="field"><span>Przezroczystość: <output id="acOut">${transpOf(c)}%</output></span><input type="range" id="acAlpha" min="0" max="90" step="5" value="${transpOf(c)}"></label></div>`; })()}
       <label class="check"><input type="checkbox" id="acShow"${!a || a.show ? ' checked' : ''}><span>Pokazuj na liście kont</span></label>`,
       a ? 'Zapisz zmiany' : 'Dodaj konto', async () => {
@@ -2392,7 +2432,7 @@ function startApp(initial) {
     syncEl.innerHTML = (kind ? `<span>${html}</span>` : '') + (mismatch ? `<span class="mm">${mismatch}</span>` : '');
   }
   function checkVersion(sv) {
-    mismatch = !sv || sv === CLIENT_VERSION ? '' : `Strona jest w wersji v${CLIENT_VERSION}, a skrypt w Apps Script v${escHtml(sv)}. Wklej nowy Code.gs i wdróż nową wersję.`;
+    mismatch = !sv || major(sv) === major(CLIENT_VERSION) ? '' : `Strona jest w wersji v${CLIENT_VERSION}, a skrypt w Apps Script v${escHtml(sv)}. Wklej nowy Code.gs i wdróż nową wersję.`;
   }
   function start(model) {
     document.body.classList.remove('booting', 'setup');

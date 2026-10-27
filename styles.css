@@ -704,3 +704,26 @@
   .clr-prev { margin: 4px 0 8px; height: 44px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line);
     background: repeating-conic-gradient(#3a4250 0 25%, #262c36 0 50%) 0 0 / 16px 16px; }
   .clr-prev span { display: block; height: 100%; }
+
+  /* --- v19: wybór wyglądu (skórki) --- */
+  :root { --left-area: var(--left); }
+  .skin-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .skin { position: relative; border: 1px solid var(--line); background: var(--bg); color: var(--text); padding: 8px; text-align: left; font: inherit; cursor: pointer; border-radius: 14px; }
+  .skin .pv { height: 96px; border-radius: 9px; overflow: hidden; position: relative; }
+  .skin b { display: block; margin-top: 8px; font-size: 15px; }
+  .skin small { display: block; color: var(--muted); font-size: 12.5px; }
+  .skin[aria-pressed="true"] { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+  .skin[aria-pressed="true"]::after { content: '✓'; position: absolute; top: 14px; right: 14px; width: 22px; height: 22px; display: grid; place-items: center; font-size: 13px; font-weight: 800; background: var(--focus); color: var(--bg); border-radius: 50%; }
+  .pv-classic { background: #0d1420; }
+  .pv-classic i { position: absolute; left: 8px; right: 8px; height: 22px; background: #131c2a; border-radius: 6px; }
+  .pv-classic i:nth-child(1) { top: 8px; } .pv-classic i:nth-child(2) { top: 36px; } .pv-classic i:nth-child(3) { top: 64px; background: transparent; display: flex; gap: 2px; }
+  .pv-classic em { position: absolute; left: 14px; top: 70px; right: 14px; height: 10px; display: flex; gap: 2px; }
+  .pv-classic em span { flex: 1; } .pv-classic em span:nth-child(1) { background: #d95926; flex: 3; } .pv-classic em span:nth-child(2) { background: #199e70; flex: 4; }
+  .pv-classic s { position: absolute; left: 14px; top: 14px; width: 40%; height: 9px; background: #e2e8f0; border-radius: 3px; opacity: .85; }
+  .pv-neon { background: linear-gradient(rgba(70,60,140,.25) 1px, transparent 1px) 0 0 / 100% 12px, linear-gradient(90deg, rgba(70,60,140,.25) 1px, transparent 1px) 0 0 / 12px 100%, #07070c; }
+  .pv-neon i { position: absolute; left: 8px; right: 8px; height: 22px; background: #171a29; box-shadow: inset 0 0 0 1px #3a3160; clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%); }
+  .pv-neon i:nth-child(1) { top: 8px; } .pv-neon i:nth-child(2) { top: 36px; }
+  .pv-neon i::after { content: ''; position: absolute; left: 0; top: 0; width: 18px; height: 2px; background: #f3e600; }
+  .pv-neon em { position: absolute; left: 14px; top: 70px; right: 14px; height: 10px; display: flex; gap: 2px; }
+  .pv-neon em span { flex: 1; } .pv-neon em span:nth-child(1) { background: #ff2a6d; flex: 3; box-shadow: 0 0 8px #ff2a6d; } .pv-neon em span:nth-child(2) { background: #f3e600; flex: 4; box-shadow: 0 0 8px #f3e600; }
+  .pv-neon s { position: absolute; left: 14px; top: 14px; width: 40%; height: 9px; background: #f3e600; box-shadow: -2px 0 #ff2a6d, 2px 0 #00e5ff; }
