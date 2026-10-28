@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.3';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.4';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -649,12 +649,12 @@ function startApp(initial) {
   const blocksPresent = BLOCK_ORDER.filter(id => D.blocks.some(b => b.id === id));
   V.wydatki += `<section class="panel hero" aria-labelledby="h-year">
     <div class="panel-head"><div><h2 id="h-year">Dochód i wydatki w ${D.year}</h2>
-    <p class="desc">${VIEW === 'structure' ? (ISO ? 'Tylko: ' + esc(D.blocks.find(b => b.id === ISO).name) + '. Dotknij nazwy w legendzie, żeby wrócić albo wybrać inny blok.' : 'Wydatki złożone z bloków, linia to dochód. Dotknij bloku w legendzie, żeby zobaczyć tylko jego.') : 'Pole między liniami to pieniądze, które zostają w danym miesiącu. Dotknij miesiąca, żeby zobaczyć, na co poszły pieniądze.'}</p></div>
+    <p class="desc">${VIEW === 'structure' ? (ISO ? 'Tylko: ' + esc(D.blocks.find(b => b.id === ISO).name) + '. Dotknij nazwy w legendzie, żeby wrócić albo wybrać inny blok.' : 'Słupki to wydatki już poniesione (w bieżącym miesiącu do dziś, w kolejnych tylko zapłacone z góry). Linia to dochód. Dotknij bloku w legendzie, żeby zobaczyć tylko jego.') : 'Pole między liniami to pieniądze, które zostają w danym miesiącu. Dotknij miesiąca, żeby zobaczyć, na co poszły pieniądze.'}</p></div>
     <div class="seg-sm" role="group" aria-label="Widok wykresu"><button type="button" data-view="balance" aria-pressed="${VIEW === 'balance'}">Bilans</button><button type="button" data-view="structure" aria-pressed="${VIEW === 'structure'}">Struktura</button></div></div>
     <div class="chart" id="yearChart"><div class="tip" id="tip" role="status"></div></div>
     <div class="legend">${VIEW === 'structure'
       ? blocksPresent.map(id => `<button type="button" data-iso="${id}" aria-pressed="${ISO === id}" class="${ISO && ISO !== id ? 'dim' : ''}"><i class="sw" style="background:${colorOf(id)}"></i>${esc(D.blocks.find(b => b.id === id).name)}</button>`).join('') +
-        (ISO ? `<button type="button" data-iso="">Pokaż wszystkie</button>` : `<span><i class="sw line" style="background:var(--text)"></i>dochód</span><span><i class="sw" style="background:var(--muted);opacity:.45"></i>jaśniej = prognoza</span>`) + taxLegend
+        (ISO ? `<button type="button" data-iso="">Pokaż wszystkie</button>` : `<span><i class="sw line" style="background:var(--text)"></i>dochód</span><span><i class="sw line" style="background:repeating-linear-gradient(90deg,var(--text) 0 4px,transparent 4px 7px)"></i>dochód (prognoza)</span>`) + taxLegend
       : `<span><i class="sw line" style="background:var(--income)"></i>dochód</span>
       <span><i class="sw line" style="background:var(--expense)"></i>wydatki</span>
       <span><i class="sw" style="background:var(--left-area);opacity:.6"></i>zostaje</span>
@@ -939,8 +939,10 @@ function startApp(initial) {
 
   /* ================= struktura wydatków ================= */
   const tabs = [{ k: 'year', label: 'Cały rok' }];
-  for (let m = lastIdx; m >= 0; m--) tabs.push({ k: m, label: D.monthShort[m] });
-  let sel = CAT_SEL !== 'year' && CAT_SEL <= lastIdx ? CAT_SEL : 'year';
+  let lastCat = lastIdx;                                       // przyszłe miesiące z wpisami (np. rata z góry) też dostają zakładkę
+  for (let m = 11; m > lastIdx; m--) if (D.blocks.some(b => (b.perMonth[m] || 0) > 0.004)) { lastCat = m; break; }
+  for (let m = lastCat; m >= 0; m--) tabs.push({ k: m, label: D.monthShort[m] });
+  let sel = CAT_SEL !== 'year' && CAT_SEL <= lastCat ? CAT_SEL : 'year';
   const tabsEl = document.getElementById('catTabs'), listEl = document.getElementById('catList');
   const prevEl = document.getElementById('catPrev'), nextEl = document.getElementById('catNext');
   const syncArrows = () => {
@@ -955,7 +957,7 @@ function startApp(initial) {
   function renderCats() {
     const keep = tabsEl.scrollLeft;
     tabsEl.innerHTML = tabs.map(tb => `<button type="button" data-k="${tb.k}" aria-pressed="${String(tb.k) === String(sel)}">${tb.label}</button>`).join('');
-    const val = arr => sel === 'year' ? arr.slice(0, lastIdx + 1).reduce((a, b) => a + b, 0) : arr[sel];
+    const val = arr => sel === 'year' ? arr.slice(0, lastCat + 1).reduce((a, b) => a + b, 0) : arr[sel];
     const rows = D.blocks.map(b => ({ b, v: val(b.perMonth) })).filter(r => r.v > 0).sort((a, b) => b.v - a.v);
     const total = rows.reduce((s, r) => s + r.v, 0);
     const max = rows.length ? rows[0].v : 1;
@@ -964,7 +966,7 @@ function startApp(initial) {
       return `<details class="cat" data-cat="${r.b.id}"${OPEN_CATS.has(r.b.id) ? ' open' : ''}><summary><div class="row"><span><i class="dotc" style="background:${colorOf(r.b.id)}"></i>${esc(r.b.name)}<small>${Math.round(r.v / total * 100)}%</small><span class="chev" aria-hidden="true">▶</span></span><b class="num">${zl(r.v)}</b></div>
         <div class="bar"><span style="background:${colorOf(r.b.id)}" data-w="${r.v / max * 100}"></span></div></summary>
         <div class="subs">${subs.map(s => `<div><span>${esc(s.n)}</span><span class="num">${zl(s.v)}</span></div>`).join('')}</div></details>`;
-    }).join('') + `<p class="total">Razem <b class="num" style="color:var(--text)">${zl(total)}</b>${sel === 'year' ? ' od początku roku' : ' w tym miesiącu'}.</p>`;
+    }).join('') + `<p class="total">Razem <b class="num" style="color:var(--text)">${zl(total)}</b>${sel === 'year' ? ' od początku roku' : sel > lastIdx ? ' zapłacone z góry' : ' w tym miesiącu'}.</p>`;
     requestAnimationFrame(() => listEl.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }));
     tabsEl.scrollLeft = keep;
     tabsEl.querySelectorAll('button').forEach(btn => btn.onclick = () => {
@@ -1125,8 +1127,11 @@ function startApp(initial) {
 
   /* ================= wykres: struktura wydatków (skumulowane kolumny) + linia dochodu ================= */
   const roundTop = (x, y, w, h, r) => { r = Math.min(r, h, w / 2); return `M${f1(x)},${f1(y + h)}V${f1(y + r)}Q${f1(x)},${f1(y)} ${f1(x + r)},${f1(y)}H${f1(x + w - r)}Q${f1(x + w)},${f1(y)} ${f1(x + w)},${f1(y + r)}V${f1(y + h)}Z`; };
-  function monthStack(i, toDate) {
-    const x = D.yearMonths[i], real = x.status === 'actual' || (toDate && x.status === 'current');
+  // miesiąc przyszły z kwotami już wpisanymi (np. rata zapłacona z góry)
+  const spentIn = i => D.blocks.reduce((a, b) => a + Math.max(0, b.perMonth[i] || 0), 0);
+  const hasSpent = i => spentIn(i) > 0.004;
+  function monthStack(i, realOnly) {
+    const x = D.yearMonths[i], real = realOnly || x.status === 'actual';
     const segs = BLOCK_ORDER.filter(id => D.blocks.some(b => b.id === id)).map(id => {
       const b = D.blocks.find(bb => bb.id === id);
       return { id, name: b.name, v: Math.max(0, real ? b.perMonth[i] : ((x.byBlock || {})[id] || 0)) };
@@ -1142,7 +1147,7 @@ function startApp(initial) {
     const iw = W - pad.l - pad.r, ih = H - pad.t - pad.b;
     const n = ym.length - 1;
     const stacks = ym.map((x, i) => {
-      const st = monthStack(i);
+      const st = monthStack(i, true);   // słupki tylko z poniesionych wydatków; prognozę pokazuje linia dochodu i widok Bilans
       if (!ISO) return st;
       const segs = st.segs.filter(g => g.id === ISO);
       return { segs, total: segs.reduce((a, g) => a + g.v, 0) };
@@ -1166,7 +1171,7 @@ function startApp(initial) {
     // kolumny: segmenty od dołu, lekko przezroczyste, bez przerw i obrysów; zaokrąglona tylko góra
     const showTotals = bw >= 24 || !!ISO;
     const cols = stacks.map((st, i) => {
-      const op = ym[i].status === 'actual' ? 1 : ym[i].status === 'current' ? 0.75 : 0.45;
+      const op = 1;
       let yCur = Y(0), out = '';
       const vis = st.segs.filter(g => g.v / top * ih >= 0.8);
       vis.forEach((g, j) => {
@@ -1221,8 +1226,8 @@ function startApp(initial) {
       box.querySelectorAll('.scol').forEach((g, j) => g.setAttribute('opacity', j === i ? g.dataset.op : g.dataset.op * 0.35));
       const fc = d.status !== 'actual';
       const rows = st.segs.filter(g => g.v > 0).sort((a, c) => c.v - a.v);
-      tip.innerHTML = `<div class="t">${D.monthNames[i]}${fc ? ' <em>' + (d.status === 'current' ? 'w trakcie, prognoza' : 'prognoza') + '</em>' : ''}</div>
-        ${ISO ? '' : `<div class="r"><span><i class="sw line" style="background:var(--text)"></i>Dochód</span><span class="num">${zlR(d.incomeA, d.incomeB)}</span></div>`}
+      tip.innerHTML = `<div class="t">${D.monthNames[i]}${fc ? ' <em>' + (d.status === 'current' ? 'w trakcie, wydane do dziś' : st.total > 0 ? 'zapłacone z góry' : 'jeszcze bez wydatków') + '</em>' : ''}</div>
+        ${ISO ? '' : `<div class="r"><span><i class="sw line" style="background:var(--text)"></i>Dochód${fc ? ' (prognoza)' : ''}</span><span class="num">${zlR(d.incomeA, d.incomeB)}</span></div>`}
         ${rows.map(g => `<div class="r"><span><i class="sw" style="background:${colorOf(g.id)}"></i>${esc(g.name)}</span><span class="num">${zl(g.v)}</span></div>`).join('')}
         <div class="r" style="border-top:1px solid var(--line);margin-top:3px;padding-top:3px"><span>${ISO ? 'Razem w bloku' : 'Wydatki razem'}</span><span class="num">${zl(st.total)}</span></div>
         ${d.crossA || d.crossB ? '<div class="tax-line">Drugi próg podatkowy w tym miesiącu</div>' : ''}
@@ -1555,9 +1560,10 @@ function startApp(initial) {
   /* ================= szczegóły miesiąca (po kliknięciu w wykres) ================= */
   function openDetail(i) {
     const ym = D.yearMonths[i];
-    const status = ym.status === 'actual' ? 'rzeczywiste dane' : ym.status === 'current' ? 'w trakcie' : 'prognoza';
+    const ahead = ym.status === 'future' && hasSpent(i);  // przyszły miesiąc, w którym coś już zapłacono z góry
+    const status = ym.status === 'actual' ? 'rzeczywiste dane' : ym.status === 'current' ? 'w trakcie' : ahead ? 'zapłacone z góry' : 'prognoza';
     $('detailTitle').innerHTML = `${esc(D.monthNames[i])} ${D.year}<span class="status-chip">${status}</span>`;
-    const real = ym.status !== 'future';                 // dla bieżącego: kwoty do dziś
+    const real = ym.status !== 'future' || ahead;        // dla bieżącego: kwoty do dziś; dla przyszłego: to, co już wpisane
     const rows = D.blocks.map(b => {
       const v = real ? b.perMonth[i] : ((ym.byBlock || {})[b.id] || 0);
       const typical = b.baseline;
@@ -1568,16 +1574,17 @@ function startApp(initial) {
     const max = Math.max(1, ...rows.map(r => r.v));
     let h = '';
     if (ym.status === 'current') h += `<p class="dnote">Miesiąc trwa: kwoty kategorii to wydatki wpisane do dziś. Suma na koniec miesiąca to prognoza.</p>`;
-    if (ym.status === 'future') h += `<p class="dnote">To prognoza: typowy miesiąc z ostatnich danych, raty i terminy przypadające w tym miesiącu.</p>`;
+    if (ahead) h += `<p class="dnote">Miesiąc jeszcze się nie zaczął. Kategorie pokazują to, co już zapłaciłeś z góry. Prognoza całego miesiąca: <b class="num">${zl(ym.expenses)}</b> wydatków.</p>`;
+    else if (ym.status === 'future') h += `<p class="dnote">To prognoza: typowy miesiąc z ostatnich danych, raty i terminy przypadające w tym miesiącu.</p>`;
     if (ym.crossA || ym.crossB) h += `<p class="dnote" style="color:var(--warning)">W tym miesiącu dochód przekracza 120 000 zł i część pensji jest opodatkowana stawką 32%.</p>`;
-    const spent = real ? ym.actualExpenses : ym.expenses;
+    const spent = ahead ? spentIn(i) : real ? ym.actualExpenses : ym.expenses;
     h += `<div class="dsum">
       <div><span>Dochód</span><b class="num">${zlR(ym.incomeA, ym.incomeB)}</b></div>
-      <div><span>${ym.status === 'current' ? 'Wydane do dziś' : 'Wydatki'}</span><b class="num">${zl(spent)}</b></div>
+      <div><span>${ym.status === 'current' ? 'Wydane do dziś' : ahead ? 'Zapłacone z góry' : 'Wydatki'}</span><b class="num">${zl(spent)}</b></div>
       <div><span>${ym.leftA < 0 ? 'Brakuje' : 'Zostaje'}</span><b class="num" style="color:${ym.leftA < 0 ? 'var(--critical)' : 'var(--text)'}">${ym.leftA < 0 && ym.leftB < 0 ? zlR(-ym.leftA, -ym.leftB) : zlR(ym.leftA, ym.leftB)}</b></div>
     </div>`;
     // pasek struktury jak kolumna z wykresu: segmenty bloków + znacznik dochodu
-    const st = monthStack(i, true);
+    const st = monthStack(i, real);
     const segs = st.segs.filter(g => g.v > 0);
     const scale = Math.max(st.total, ym.incomeA, ym.incomeB) * 1.02 || 1;
     if (segs.length) {
