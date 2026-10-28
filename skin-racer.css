@@ -202,3 +202,7 @@ html[data-skin="racer"] .seg-sm { max-width: 100%; }
 html[data-skin="racer"] .month .pay-btn.ghost, html[data-skin="racer"] .month .btn-sm { background: rgba(243,238,228,.1); color: var(--cream); border: 1.5px solid rgba(243,238,228,.5); }
 html[data-skin="racer"] .osz-tip.ok h2 { color: var(--text); }
 html[data-skin="racer"] .sub-head h1 { font-family: var(--wide); font-stretch: 125%; font-weight: 900; text-transform: uppercase; }
+html[data-skin="racer"] .month .m-stats small, html[data-skin="racer"] .month .m-daily small, html[data-skin="racer"] .month .m-var { color: #bcd2d5; }
+html[data-skin="racer"] .month .m-daily { color: #cfe0e2; border-top-color: rgba(243,238,228,.2); }
+html[data-skin="racer"] .month .seg-sm { background: rgba(0,0,0,.22); }
+html[data-skin="racer"] .month .seg-sm button { color: #cfe0e2; }

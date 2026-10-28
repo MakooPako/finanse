@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.4';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.5';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -405,6 +405,20 @@ function startApp(initial) {
       <div class="skin-list">${SKINS.map(k => `<button type="button" class="skin" data-skin-set="${k.id}" aria-pressed="${cur === k.id}">${k.pv}<b>${k.name}</b><small>${k.note}</small></button>`).join('')}</div>
     </section>`;
   }
+  // ustawienia, które zmienia się tylko w arkuszu – żeby było wiadomo, gdzie ich szukać
+  function sheetPanel() {
+    const rows = [
+      ['Ustawienia', 'rok, pensja brutto, koszty uzyskania, PIT-2, ile miesięcy do średniej'],
+      ['Ustawienia', 'szybkie przyciski w formularzu wpisu i rodzaje wpływów'],
+      ['Ustawienia', 'zobowiązania (raty) i dodatkowe dochody w prognozie'],
+      ['Terminy', 'wydatki roczne: OC/AC, przegląd, ubezpieczenia (rezerwa w Planie)'],
+      ['Konta', 'raty z postępem, cel oszczędności, uwagi do kont']
+    ];
+    return `<section class="panel" aria-labelledby="h-insheet"><div class="panel-head"><div><h2 id="h-insheet">W arkuszu</h2>
+      <p class="desc">Limity, opłaty, konta i kolory zmieniasz w aplikacji. Te rzeczy zmienia się tylko w arkuszu:</p></div>
+      ${D.sheetUrl ? `<a class="btn-sm" href="${esc(D.sheetUrl)}" target="_blank" rel="noopener">Otwórz arkusz</a>` : ''}</div>
+      <ul class="insheet">${rows.map(r => `<li><b>${r[0]}</b><span>${r[1]}</span></li>`).join('')}</ul></section>`;
+  }
   document.addEventListener('click', e => {
     const b = e.target.closest('[data-skin-set]');
     if (!b || !window.setSkin) return;
@@ -472,6 +486,54 @@ function startApp(initial) {
     } catch (err) { toast('Nie udało się zapisać kolorów: ' + esc(err.message || err)); }
   });
 
+  /* ================= TERAZ: ile dziennie na co dzień (z salda konta do wydatków) ================= */
+  function dailyLine(daysLeft) {
+    const AC = D.accounts; if (!AC) return '';
+    const daily = AC.list.find(a => a.role === 'na co dzień' && a.est !== null);
+    if (!daily || AC.daysSinceUpdate === null || AC.daysSinceUpdate > 40) return '';
+    const t = D.today, end = iso(new Date(D.year, t.m + 1, 0));
+    // opłaty do końca miesiąca, które jeszcze zejdą z konta (ręczne i subskrypcje, bez wpływów)
+    const due = (D.payments || []).filter(p => !p.income && p.state !== 'paid' && p.dueDate <= end && p.toPay);
+    const dueSum = due.reduce((a, p) => a + p.toPay, 0);
+    const days = Math.max(1, daysLeft + 1), free = daily.est - dueSum, per = free / days;
+    const base = `${esc(daily.name)}: ${daily.est !== daily.balance ? 'około ' : ''}${zl(daily.est)}${dueSum ? `, minus opłaty do końca miesiąca ${zl(dueSum)}` : ''}, na ${days === 1 ? 'dziś' : days + ' dni'}.`;
+    return per > 0
+      ? `<p class="m-daily">Na co dzień możesz wydać około <b class="num">${zl(per)}</b> dziennie<small>${base}</small></p>`
+      : `<p class="m-daily neg">Na koncie do wydatków brakuje około <b class="num">${zl(-free)}</b> na opłaty do końca miesiąca<small>${base}</small></p>`;
+  }
+  /* ================= TERAZ: poprzedni miesiąc w skrócie (pierwsze 10 dni miesiąca) ================= */
+  function monthSummary() {
+    const t = D.today, pm = D.currentMonth - 1;
+    if (!D.current || pm < 0 || t.d > 10) return '';
+    const key = D.year + '-' + pm;
+    try { if (localStorage.getItem('finanse.sumSeen') === key) return ''; } catch (e) { /* bez pamięci: pokazujemy */ }
+    const ym = D.yearMonths[pm]; if (!ym || ym.status !== 'actual') return '';
+    const diffs = D.blocks.filter(b => b.baseline !== null && b.baseline > 0).map(b => ({ b, d: (b.perMonth[pm] || 0) - b.baseline })).filter(x => Math.abs(x.d) >= 50).sort((a, c) => c.d - a.d);
+    const comparable = D.blocks.filter(b => b.baseline !== null && b.baseline > 0);
+    const typ = comparable.reduce((a, b) => a + b.baseline, 0), was = comparable.reduce((a, b) => a + (b.perMonth[pm] || 0), 0);
+    const pct = typ ? Math.round((was - typ) / typ * 100) : 0;
+    const over = (D.limits || []).filter(l => (l.series || [])[pm] > l.limit);
+    const left = ym.actualIncome - ym.actualExpenses;
+    const up = diffs.filter(x => x.d > 0).slice(0, 2), down = diffs.filter(x => x.d < 0).slice(-2).reverse();
+    const name = D.monthNames[pm];
+    const rows = [
+      `Wydane <b class="num">${zl(ym.actualExpenses)}</b>, ${left >= 0 ? 'zostało' : 'zabrakło'} <b class="num">${zl(Math.abs(left))}</b>.`,
+      typ ? `Bez rat i wakacji: <b class="num">${zl(was)}</b>, ${Math.abs(pct) < 3 ? 'tyle co zwykle' : `o ${Math.abs(pct)}% ${pct > 0 ? 'więcej' : 'mniej'} niż zwykle`} (typowo ${zl(typ)}).` : '',
+      up.length ? `Więcej niż zwykle: ${up.map(x => `${esc(x.b.name)} <b class="num">+${zl(x.d)}</b>`).join(', ')}.` : 'Żadna kategoria nie była wyraźnie wyżej niż zwykle.',
+      down.length ? `Mniej niż zwykle: ${down.map(x => `${esc(x.b.name)} <b class="num">−${zl(-x.d)}</b>`).join(', ')}.` : '',
+      (D.limits || []).length ? (over.length ? `Limity: przekroczone ${over.length} z ${D.limits.length} (${over.map(l => esc(l.name)).join(', ')}).` : `Limity: wszystkie ${D.limits.length} dotrzymane.`) : ''
+    ].filter(Boolean);
+    return `<section class="panel month-sum" aria-labelledby="h-sum"><div class="panel-head"><div><h2 id="h-sum">${esc(name)} w skrócie</h2>
+      <p class="desc">Podsumowanie poprzedniego miesiąca, widoczne do 10. dnia.</p></div><button type="button" class="btn-sm" data-sum-close="${key}">Zamknij</button></div>
+      <ul class="sum-list">${rows.map(r => `<li>${r}</li>`).join('')}</ul>
+      <p class="sub-next"><button type="button" class="edit" data-goto="wydatki">Szczegóły w Wydatkach</button></p></section>`;
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-sum-close]'); if (!b) return;
+    try { localStorage.setItem('finanse.sumSeen', b.dataset.sumClose); } catch (err) { /* bez pamięci */ }
+    rerender();
+  });
+
   function render() {
   const cur = D.current;
   const t = D.today;
@@ -503,10 +565,12 @@ function startApp(initial) {
         ${seg(spent, 'sp', 'Wydane')}${seg(rest, 'rs', 'Jeszcze wydasz (typowo)')}${seg(left, 'lf', 'Zostanie')}
       </div>
       <div class="m-stats">
-        <div><span><i class="k sp"></i>Wydane</span><b class="num">${zl(spent)}</b></div>
-        <div><span><i class="k rs"></i>Jeszcze wydasz</span><b class="num">${zl(rest)}</b></div>
-        <div><span><i class="k in"></i>Dochód</span><b class="num">${zl(income)}</b></div>
+        <div><span><i class="k sp"></i>Wydane</span><b class="num">${zl(spent)}</b><small>do dziś</small></div>
+        <div><span><i class="k rs"></i>Jeszcze wydasz</span><b class="num">${zl(rest)}</b><small>typowo do końca</small></div>
+        <div><span><i class="k in"></i>Dochód</span><b class="num">${zl(income)}</b><small>${waiting ? `wpłynęło ${zl(cur.income)}, czeka ${zl(income - cur.income)}` : 'wszystko wpłynęło'}</small></div>
       </div>
+      ${waiting && fcCur && Math.abs(fcCur.incomeB - cur.expectedIncome) > 1 ? `<div class="m-var"><span>Czekająca wypłata w prognozie:</span><div class="seg-sm" role="group" aria-label="Wariant dochodu"><button type="button" data-variant="A" aria-pressed="${VARIANT === 'A'}">Ostrożnie</button><button type="button" data-variant="B" aria-pressed="${VARIANT === 'B'}">Z premiami</button></div></div>` : ''}
+      ${dailyLine(daysLeft)}
     </section>`;
   } else {
     V.teraz += `<section class="month"><div class="m-head"><h1>Rok ${D.year}</h1></div><p class="m-label">Zostało w ${D.year}</p><p class="m-big num">${zl(D.ytd.left)}</p></section>`;
@@ -535,6 +599,8 @@ function startApp(initial) {
   if (alerts.length) {
     V.teraz += `<ul class="alerts" aria-label="Alerty">${alerts.map(a => `<li><span class="ico ${STATE[a.s].cls}" aria-label="${STATE[a.s].label}">${STATE[a.s].ico}</span><div>${a.t}</div></li>`).join('')}</ul>`;
   }
+
+  V.teraz += monthSummary();
 
   /* ================= TERAZ: subskrypcje do potwierdzenia ================= */
   const subs = (D.payments || []).filter(p => p.auto);
@@ -700,7 +766,7 @@ function startApp(initial) {
   }
 
   /* ================= PLAN: terminy ================= */
-  let dueH = `<section class="panel" aria-labelledby="h-due"><h2 id="h-due">Terminy i wydatki roczne</h2>
+  let dueH = `<section class="panel" aria-labelledby="h-due"><h2 id="h-due">Wydatki roczne</h2>
     <p class="desc">Rezerwa to kwota, którą co miesiąc warto zostawić na koncie, żeby zebrać całość do terminu.${saveMonthly ? ` Razem około <b class="num">${zl(saveMonthly)}</b> miesięcznie${nextDl ? `, najbliższy: ${esc(nextDl.name)}` : ''}.` : ''}</p>`;
   if (!D.deadlines.length) dueH += `<p class="desc">Nie ma terminów. Dodasz je w zakładce Terminy w arkuszu.</p>`;
   D.deadlines.forEach(d => {
@@ -921,7 +987,7 @@ function startApp(initial) {
   }
 
   V.urzadzenia = `<div class="sub-head"><button type="button" class="linkish" data-goto="${PREV_TAB}">‹ Wróć</button><h1>Ustawienia</h1>
-      <p>Wygląd, urządzenia z dostępem do arkusza, przypomnienia o płatnościach i kolory kategorii.</p></div>` + skinPanel() + devicesPanel() + remindersPanel() + colorsPanel() +
+      <p>Wygląd, urządzenia z dostępem do arkusza, przypomnienia o płatnościach i kolory kategorii.</p></div>` + skinPanel() + sheetPanel() + devicesPanel() + remindersPanel() + colorsPanel() +
     `<section class="panel" aria-labelledby="h-acc"><h2 id="h-acc">Jak działa dostęp</h2><ul class="plain">
       <li>Każde urządzenie ma własną przepustkę. Usunięte traci dostęp od razu.</li>
       <li>Kolejne urządzenia łączysz 6-cyfrowym kodem, ważnym 5 minut i tylko raz.</li>
