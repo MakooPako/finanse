@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.2';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.3';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -1378,16 +1378,22 @@ function startApp(initial) {
       const used = Math.min(F.payment.credit, a);
       hint.textContent = `Faktura ${zlc(a)}, z nadpłaty ${zlc(used)}, do przelewu ${zlc(Math.max(0, a - used))}.`;
     }
-    const d = dateEl.value;
+    const d = dateEl.value, today = iso(new Date());
+    const maxD = (F.payment && F.payMax) || today;   // płatność „z góry” może mieć datę aż do końca swojego miesiąca
     let mh = '';
-    if (d) {
+    if (d && F.payment && !F.payment.auto) {
+      // płatność trafia do komórki swojego okresu, niezależnie od daty przelewu
+      const [py, pm] = F.payment.period.split('-').map(Number);
+      mh = 'Trafi do miesiąca: ' + D.monthNames[pm - 1].toLowerCase() + (py !== D.year ? ' ' + py : '') + ' (płatność za ten miesiąc, niezależnie od daty przelewu)';
+      if (d > maxD) mh = 'Najpóźniej ' + fmtDay(maxD) + '.';
+    } else if (d) {
       const [y, m] = d.split('-').map(Number);
       mh = 'Trafi do miesiąca: ' + D.monthNames[m - 1].toLowerCase() + (y !== D.year ? ' ' + y : '');
-      if (d > iso(new Date())) mh = 'Data jest w przyszłości. Sprawdź ją.';
+      if (d > today) mh = 'Data jest w przyszłości. Sprawdź ją.';
     }
     $('monthHint').textContent = mh;
     const name = targetLabel();
-    const ok = name && a !== null && !isNaN(a) && a !== 0 && !(F.kind === 'income' && a < 0) && d && d <= iso(new Date()) && !F.busy;
+    const ok = name && a !== null && !isNaN(a) && a !== 0 && !(F.kind === 'income' && a < 0) && d && d <= maxD && !F.busy;
     saveEl.disabled = !ok;
     if (F.busy) saveEl.textContent = 'Zapisuję…';
     else if (!name) saveEl.textContent = F.kind === 'income' ? 'Wybierz rodzaj wpływu' : F.other ? 'Wybierz blok dla „Różne”' : 'Wybierz kategorię i wpisz kwotę';
@@ -1927,6 +1933,7 @@ function startApp(initial) {
   /* ================= zapłata płatności cyklicznej ================= */
   function setPayMode(p) {
     F.payment = p || null;
+    F.payMax = null;
     $('payCtx').hidden = !p;
     $('kindSeg').hidden = !!p;
     $('expensePick').hidden = !!p || F.kind !== 'expense';
@@ -1961,11 +1968,14 @@ function startApp(initial) {
     const per = p.periodMonth.toLowerCase() + ' ' + p.periodYear;
     $('payCtx').innerHTML = `Płatność za <b>${esc(per)}</b>${p.invoiceDate ? `, faktura ${fmtDay(p.invoiceDate)}` : ''}, termin <b>${fmtDay(p.dueDate)}</b>. Kwota trafi do: ${esc(p.block)}, ${esc(pretty(p.col))}.` +
       (p.credit > 0 ? `<br>Masz nadpłatę <b class="num">${zlc(p.credit)}</b>. Wpisz kwotę z faktury: do arkusza trafi tylko to, co przelewasz, a reszta nadpłaty zostanie na kolejny rachunek.` : '');
+    // data przelewu: od dziś aż do końca miesiąca, za który płacisz (np. rata listopadowa z datą 1 listopada)
+    const [py, pm] = p.period.split('-').map(Number), endP = iso(new Date(py, pm, 0)), todayP = iso(new Date());
+    F.payMax = endP > todayP ? endP : todayP;
     amountEl.value = p.estimate !== null ? String(p.credit > 0 ? p.estimate : p.toPay).replace('.', ',') : '';
     descEl.value = p.name;
     unpaidEl.checked = false;
-    setDate(iso(new Date()));
-    dateEl.max = iso(new Date());
+    setDate(todayP);
+    dateEl.max = F.payMax;
     errEl.textContent = '';
     showSheet(sheet);
     update();
