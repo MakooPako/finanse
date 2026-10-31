@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.6';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.7';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -1025,13 +1025,26 @@ function startApp(initial) {
     tabsEl.innerHTML = tabs.map(tb => `<button type="button" data-k="${tb.k}" aria-pressed="${String(tb.k) === String(sel)}">${tb.label}</button>`).join('');
     const val = arr => sel === 'year' ? arr.slice(0, lastCat + 1).reduce((a, b) => a + b, 0) : arr[sel];
     const rows = D.blocks.map(b => ({ b, v: val(b.perMonth) })).filter(r => r.v > 0).sort((a, b) => b.v - a.v);
+    // wpisy z aplikacji w wybranym okresie, przypisane do kolumny (Blok / Kolumna) – do rozwinięcia pozycji
+    const yearEntries = (D.entries || []).filter(e => !e.undone && e.kind === 'wydatek' && e.date && +e.date.slice(0, 4) === D.year);
+    const subEntries = (b, n) => yearEntries.filter(e => e.category === b.name + ' / ' + n && (sel === 'year' || +e.date.slice(5, 7) - 1 === sel));
+    const subRow = (b, x) => {
+      const list = subEntries(b, x.n);
+      if (!list.length) return `<div><span>${esc(x.n)}</span><span class="num">${zl(x.v)}</span></div>`;
+      const net = e => e.amount - (e.credit || 0);
+      const rest = Math.round((x.v - list.reduce((a, e) => a + net(e), 0)) * 100) / 100;
+      const k = 'sub:' + b.id + ':' + x.n;
+      return `<details class="sub-d" data-keep-sub="${esc(k)}"${OPEN_CATS.has(k) ? ' open' : ''}><summary><span>${esc(x.n)}<small class="sub-n">${list.length}</small><span class="chev" aria-hidden="true">▶</span></span><span class="num">${zl(x.v)}</span></summary>
+        <ul class="sub-entries">${list.map(e => `<li><button type="button" data-entry="${esc(e.id)}"><span class="d">${fmtShort(e.date)}</span><span class="t">${e.desc ? esc(e.desc) : '<i>bez opisu</i>'}</span><span class="num">${zlc(net(e))}</span></button></li>`).join('')}</ul>
+        ${rest > 0.5 ? `<p class="sub-rest">Pozostałe ${zlc(rest)} wpisane bezpośrednio w arkuszu, bez opisu.</p>` : ''}</details>`;
+    };
     const total = rows.reduce((s, r) => s + r.v, 0);
     const max = rows.length ? rows[0].v : 1;
     listEl.innerHTML = rows.map(r => {
       const subs = r.b.cols.map(c => ({ n: c.name, v: val(c.perMonth) })).filter(x => x.v !== 0).sort((a, b) => b.v - a.v);
       return `<details class="cat" data-cat="${r.b.id}"${OPEN_CATS.has(r.b.id) ? ' open' : ''}><summary><div class="row"><span><i class="dotc" style="background:${colorOf(r.b.id)}"></i>${esc(r.b.name)}<small>${Math.round(r.v / total * 100)}%</small><span class="chev" aria-hidden="true">▶</span></span><b class="num">${zl(r.v)}</b></div>
         <div class="bar"><span style="background:${colorOf(r.b.id)}" data-w="${r.v / max * 100}"></span></div></summary>
-        <div class="subs">${subs.map(s => `<div><span>${esc(s.n)}</span><span class="num">${zl(s.v)}</span></div>`).join('')}</div></details>`;
+        <div class="subs">${subs.map(x => subRow(r.b, x)).join('')}</div></details>`;
     }).join('') + `<p class="total">Razem <b class="num" style="color:var(--text)">${zl(total)}</b>${sel === 'year' ? ' od początku roku' : sel > lastIdx ? ' zapłacone z góry' : ' w tym miesiącu'}.</p>`;
     requestAnimationFrame(() => listEl.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }));
     tabsEl.scrollLeft = keep;
@@ -1040,6 +1053,7 @@ function startApp(initial) {
       const b = tabsEl.querySelector('[aria-pressed="true"]'); if (b) b.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
     });
     listEl.querySelectorAll('details[data-cat]').forEach(d => d.addEventListener('toggle', () => { if (d.open) OPEN_CATS.add(d.dataset.cat); else OPEN_CATS.delete(d.dataset.cat); }));
+    listEl.querySelectorAll('details[data-keep-sub]').forEach(d => d.addEventListener('toggle', () => { if (d.open) OPEN_CATS.add(d.dataset.keepSub); else OPEN_CATS.delete(d.dataset.keepSub); }));
     syncArrows();
   }
   renderCats();
@@ -1449,8 +1463,15 @@ function startApp(initial) {
     document.querySelectorAll('.dates button[data-ago]').forEach(b => b.setAttribute('aria-pressed', String(daysAgo(+b.dataset.ago) === v)));
     update();
   }
+  const isOtherCol = (block, col) => (D.otherCols || []).some(o => o.block === block && o.col === col) || /^(inne|różne)\b/i.test(String(col || '').trim());
   function update() {
     syncNextBtn();
+    {
+      const c = F.kind === 'expense' && !F.payment && !F.edit ? catByKey(F.key) : null;
+      const want = !!(c && isOtherCol(c.block, c.col) && !descEl.value.trim());
+      descEl.classList.toggle('want', want);
+      $('descHint').textContent = want ? 'Co kupiłeś? Bez opisu nie będzie wiadomo, co to było.' : '';
+    }
     const a = parseAmount(amountEl.value);
     const hint = $('amountHint');
     if (a === null) hint.textContent = 'Kilka kwot naraz? Wpisz np. 12,50+30.';
@@ -1528,6 +1549,7 @@ function startApp(initial) {
   $('inflowQuick').addEventListener('click', e => { const b = e.target.closest('button[data-key]'); if (b) pickAndFocus(b.dataset.key); });
   selEl.addEventListener('change', () => { F.key = selEl.value; F.other = false; syncPickers(); update(); if (F.key) amountEl.focus(); });
   amountEl.addEventListener('input', update);
+  descEl.addEventListener('input', update);
   amountEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!saveEl.disabled) save(); else amountEl.blur(); } });
   dateEl.addEventListener('change', () => setDate(dateEl.value));
   document.querySelectorAll('.dates button[data-ago]').forEach(b => b.addEventListener('click', () => setDate(daysAgo(+b.dataset.ago))));

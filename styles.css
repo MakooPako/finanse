@@ -760,3 +760,22 @@
   .insheet li:first-child { border-top: 0; }
   .insheet b { color: var(--text); font-weight: 600; }
   a.btn-sm { text-decoration: none; display: inline-flex; align-items: center; }
+
+  /* --- v18.7: wpisy pod pozycjami w „Na co idą pieniądze”, przypomnienie o opisie --- */
+  .cat .subs details.sub-d > summary { list-style: none; display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; cursor: pointer; }
+  .cat .subs details.sub-d > summary::-webkit-details-marker { display: none; }
+  .cat .subs details.sub-d > summary > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+  .sub-n { font-size: 11.5px; font-weight: 600; color: var(--text-2); background: var(--surface-2); border-radius: 99px; padding: 0 7px; line-height: 18px; }
+  details.sub-d .chev { color: var(--muted); font-size: 10px; transition: transform .2s; }
+  details.sub-d[open] .chev { transform: rotate(90deg); }
+  .sub-entries { list-style: none; margin: 4px 0 6px 2px; padding: 0 0 0 10px; border-left: 2px solid var(--line); }
+  .sub-entries button { width: 100%; display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; align-items: baseline; background: none; border: 0; color: inherit; font: inherit; font-size: 13.5px; text-align: left; padding: 5px 0; cursor: pointer; }
+  .sub-entries button:hover .t { text-decoration: underline; text-underline-offset: 3px; }
+  .sub-entries .d { color: var(--muted); font-size: 12.5px; }
+  .sub-entries .t { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+  .sub-entries i { color: var(--muted); }
+  .sub-rest { margin: 0 0 8px 14px; font-size: 12.5px; color: var(--muted); }
+  @media (pointer: coarse) { .cat .subs details.sub-d > summary { min-height: 36px; align-items: center; } .sub-entries button { min-height: 40px; } }
+  .desc-hint { font-size: 13px; color: var(--warning); min-height: 0; margin-top: 5px; }
+  .desc-hint:empty { display: none; }
+  #desc.want { border-color: var(--warning); }

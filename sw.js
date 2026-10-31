@@ -1,6 +1,6 @@
 /* Service worker: aplikacja otwiera się nawet bez internetu (z ostatnimi danymi zapisanymi w przeglądarce).
    Strona i ikony: najpierw sieć, a gdy jej nie ma – kopia z pamięci. Zapytania do arkusza (script.google.com) nie są tu obsługiwane. */
-const CACHE = 'finanse-v18-6';   // podbij przy każdej wersji strony (ta sama co CLIENT_VERSION w app.js)
+const CACHE = 'finanse-v18-7';   // podbij przy każdej wersji strony (ta sama co CLIENT_VERSION w app.js)
 const SHELL = ['./', './index.html', './styles.css', './skin-neon.css', './skin-sunset.css', './skin-racer.css', './skin.js', './config.js', './app.js', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/favicon-32.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
