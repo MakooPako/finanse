@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.5';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.6';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -1382,6 +1382,16 @@ function startApp(initial) {
   const OTHER_ORDER = ['wazne', 'nieistotne', 'mieszkanie', 'tbs', 'auto', 'wakacje'];
   const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const daysAgo = n => { const d = new Date(); d.setDate(d.getDate() - n); return iso(d); };
+  // wpis może mieć datę do końca następnego miesiąca (np. zakupy z końca października zaliczone do listopada)
+  const maxEntry = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 2, 0)); };
+  const nextFirst = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 1, 1)); };
+  function syncNextBtn() {
+    const b = document.querySelector('.dates [data-next]'); if (!b) return;
+    const d = new Date(), dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    const show = !F.payment && F.kind === 'expense' && dim - d.getDate() < 7;   // ostatni tydzień miesiąca
+    b.hidden = !show;
+    if (show) { const [, m] = nextFirst().split('-').map(Number); b.textContent = '1 ' + MONTHS_GEN[m - 1]; b.setAttribute('aria-pressed', String(dateEl.value === nextFirst())); }
+  }
   const catByKey = k => (D.categories || []).find(c => c.key === k && c.kind === 'expense');
   const inflowByKey = k => (D.inflows || []).find(x => x.key === k);
   const targetLabel = () => {
@@ -1436,10 +1446,11 @@ function startApp(initial) {
   }
   function setDate(v) {
     dateEl.value = v;
-    document.querySelectorAll('.dates button').forEach(b => b.setAttribute('aria-pressed', String(daysAgo(+b.dataset.ago) === v)));
+    document.querySelectorAll('.dates button[data-ago]').forEach(b => b.setAttribute('aria-pressed', String(daysAgo(+b.dataset.ago) === v)));
     update();
   }
   function update() {
+    syncNextBtn();
     const a = parseAmount(amountEl.value);
     const hint = $('amountHint');
     if (a === null) hint.textContent = 'Kilka kwot naraz? Wpisz np. 12,50+30.';
@@ -1450,7 +1461,8 @@ function startApp(initial) {
       hint.textContent = `Faktura ${zlc(a)}, z nadpłaty ${zlc(used)}, do przelewu ${zlc(Math.max(0, a - used))}.`;
     }
     const d = dateEl.value, today = iso(new Date());
-    const maxD = (F.payment && F.payMax) || today;   // płatność „z góry” może mieć datę aż do końca swojego miesiąca
+    // płatność „z góry”: do końca swojego miesiąca; pobranie subskrypcji: najpóźniej dziś; zwykły wpis: do końca następnego miesiąca
+    const maxD = F.payment ? (F.payMax || today) : maxEntry();
     let mh = '';
     if (d && F.payment && !F.payment.auto) {
       // płatność trafia do komórki swojego okresu, niezależnie od daty przelewu
@@ -1460,7 +1472,8 @@ function startApp(initial) {
     } else if (d) {
       const [y, m] = d.split('-').map(Number);
       mh = 'Trafi do miesiąca: ' + D.monthNames[m - 1].toLowerCase() + (y !== D.year ? ' ' + y : '');
-      if (d > today) mh = 'Data jest w przyszłości. Sprawdź ją.';
+      if (d > maxD) mh = 'Najpóźniej ' + fmtDay(maxD) + '.';
+      else if (d > today) mh += ' (data w przyszłości)';
     }
     $('monthHint').textContent = mh;
     const name = targetLabel();
@@ -1483,7 +1496,7 @@ function startApp(initial) {
     if (F.payment) { setPayMode(null); setKind('expense'); amountEl.value = ''; descEl.value = ''; }
     buildPickers(); renderRecent();
     if (!dateEl.value) setDate(iso(new Date()));
-    dateEl.max = iso(new Date());
+    dateEl.max = maxEntry();
     errEl.textContent = '';
     showSheet(sheet);
     update();
@@ -1517,7 +1530,8 @@ function startApp(initial) {
   amountEl.addEventListener('input', update);
   amountEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); if (!saveEl.disabled) save(); else amountEl.blur(); } });
   dateEl.addEventListener('change', () => setDate(dateEl.value));
-  document.querySelectorAll('.dates button').forEach(b => b.addEventListener('click', () => setDate(daysAgo(+b.dataset.ago))));
+  document.querySelectorAll('.dates button[data-ago]').forEach(b => b.addEventListener('click', () => setDate(daysAgo(+b.dataset.ago))));
+  document.querySelector('.dates [data-next]').addEventListener('click', () => setDate(nextFirst()));
   saveEl.addEventListener('click', save);
 
   async function save() {
@@ -1587,7 +1601,7 @@ function startApp(initial) {
     amountEl.value = String(e.amount).replace('.', ',');
     descEl.value = e.desc || ''; unpaidEl.checked = !!e.unpaid;
     setDate(e.date || iso(new Date()));
-    dateEl.max = iso(new Date());
+    dateEl.max = maxEntry();
     errEl.textContent = '';
     const locked = !!(e.credit || (!e.pending && !e.key));
     saveEl.hidden = locked;
