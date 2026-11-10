@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.7';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '18.8';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -65,7 +65,9 @@ function startApp(initial) {
     return (NEON_CACHE[key] = '#' + f(0) + f(8) + f(4) + (c.length === 9 ? c.slice(7, 9) : ''));
   }
   const skinCol = c => ((window.SKIN === 'neon' || window.SKIN === 'sunset' || window.SKIN === 'racer') && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) ? neonize(c.toLowerCase(), window.SKIN) : c);
-  const colorOf = id => skinCol(colorRaw(id));
+  // własna paleta kategorii skórki (na razie: Neon) – zamiast rozjaśniania kolorów klasycznych
+  const SKIN_PAL = { neon: { mieszkanie: '#00e5ff', nieistotne: '#ff2a6d', wazne: '#39ff88', auto: '#ff8a00', tbs: '#8c6bff', kredyt: '#c6ff00', wakacje: '#e040fb' } };   // paleta A (11.11.2026)
+  const colorOf = id => { const sp = SKIN_PAL[window.SKIN]; return sp && sp[id] ? sp[id] : skinCol(colorRaw(id)); };
   const accColor = name => skinCol(accColorRaw(name));
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
   const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
@@ -679,7 +681,7 @@ function startApp(initial) {
     limH += `<div class="limit st-${l.status}">
       <div class="row"><span class="name">${esc(l.name)}</span><span class="amt num"><b>${zl(v)}</b> z ${zl(l.limit)}</span></div>
       <span class="state"><i style="background:${st.col}"></i>${st.label}, ${note}<button type="button" class="edit" data-limit-edit="${l.row}">Edytuj</button></span>
-      <div class="track"><span data-w="${Math.min(100, v / scale * 100)}" style="background:${st.col}"></span><u style="left:${l.limit / scale * 100}%"></u></div>
+      <div class="track"><span data-w="${Math.min(100, v / scale * 100)}" style="background:${st.col};color:${st.col}"></span><u style="left:${l.limit / scale * 100}%"></u></div>
       <div class="months">${months.map((x, i) => {
         const c = x > l.limit ? 'over' : x >= l.limit * D.warnPct / 100 ? 'warn' : '';
         return `<span class="${c}${i === D.currentMonth ? ' now' : ''}" style="height:${Math.max(10, x / mmax * 100)}%" title="${D.monthNames[i]}: ${zl(x)}"></span>`;
@@ -775,7 +777,7 @@ function startApp(initial) {
     dueH += `<div class="due">
       <div class="row"><b>${esc(d.name)}</b><b class="num">${zl(d.amount)}</b></div>
       <div class="when">${fmtDate(d.date)}, ${d.daysLeft < 0 ? 'termin minął' : dni(d.daysLeft)}</div>
-      <div class="track" style="height:5px;margin:8px 0 6px"><span data-w="${progress}" style="background:${col}"></span></div>
+      <div class="track" style="height:5px;margin:8px 0 6px"><span data-w="${progress}" style="background:${col};color:${col}"></span></div>
       ${d.daysLeft >= 0 ? `<div class="save">${d.monthsLeft > 0 ? `Rezerwa <b class="num">${zl(d.monthly)}</b> miesięcznie` : 'Do zapłaty w tym miesiącu'}</div>` : ''}
       ${d.note ? `<div class="note">${esc(d.note)}</div>` : ''}
     </div>`;
@@ -831,7 +833,7 @@ function startApp(initial) {
     taxH = `<section class="panel tax" aria-labelledby="h-tax"><h2 id="h-tax">Drugi próg podatkowy</h2>
       <p class="desc">${T.source === 'payslip' ? 'Na podstawie kwoty z paska wpisanej w Ustawieniach.' : `Szacunek z wpływów netto przy pensji ${zl(T.grossA)} brutto. Dokładniej będzie po wpisaniu podstawy z paska w Ustawieniach.`}</p>
       <div class="row"><span>Dochód do opodatkowania od stycznia</span><b class="num">około ${fmtN(T.cumBase)} z ${fmtN(T.threshold)} zł</b></div>
-      <div class="track"><span data-w="${pct}" style="background:${pct >= 100 ? 'var(--warning)' : 'var(--income)'}"></span></div>
+      <div class="track"><span data-w="${pct}" style="background:${pct >= 100 ? 'var(--warning)' : 'var(--income)'};color:${pct >= 100 ? 'var(--warning)' : 'var(--income)'}"></span></div>
       <p class="tax-msg">${msg}</p>
     </section>`;
   }
@@ -861,7 +863,7 @@ function startApp(initial) {
         <p class="m-big num">${has ? zl(AC.totalEst) : '—'}</p>
         ${has ? (() => {
           const goal = (AC.goals || [])[0] || null, scale = Math.max(1, AC.totalEst, goal ? goal.amount : 0);
-          const segs = known.filter(a => a.est > 0).map(a => `<span data-acc-bar="${esc(a.name)}" style="flex-basis:${(a.est / scale * 100).toFixed(2)}%;background:${accColor(a.name)}" title="${esc(a.name)}: ${zl(a.est)}"></span>`).join('');
+          const segs = known.filter(a => a.est > 0).map(a => `<span data-acc-bar="${esc(a.name)}" style="flex-basis:${(a.est / scale * 100).toFixed(2)}%;background:${accColor(a.name)};color:${accColor(a.name)}" title="${esc(a.name)}: ${zl(a.est)}"></span>`).join('');
           return `<div class="osz-bar${goal ? ' with-goal' : ''}" role="img" aria-label="${goal ? `Na kontach ${zl(AC.totalEst)} z celu ${zl(goal.amount)}` : 'Podział na konta'}">${segs}${goal && AC.totalEst > goal.amount ? `<i class="goal-tick" style="left:${(goal.amount / scale * 100).toFixed(2)}%"></i>` : ''}</div>${goal ? goalInfo(goal, AC) : ''}`;
         })() : ''}
         ${has ? `<div class="osz-legend">${Object.keys(KIND_COL).map(k => { const v = known.filter(a => a.kind === k).reduce((s2, a) => s2 + a.est, 0); return Math.abs(v) >= 0.5 ? `<span>${k} <b class="num">${zl(v)}</b></span>` : ''; }).filter(Boolean).join('<span class="sep">·</span>')}</div>` : ''}
@@ -1043,7 +1045,7 @@ function startApp(initial) {
     listEl.innerHTML = rows.map(r => {
       const subs = r.b.cols.map(c => ({ n: c.name, v: val(c.perMonth) })).filter(x => x.v !== 0).sort((a, b) => b.v - a.v);
       return `<details class="cat" data-cat="${r.b.id}"${OPEN_CATS.has(r.b.id) ? ' open' : ''}><summary><div class="row"><span><i class="dotc" style="background:${colorOf(r.b.id)}"></i>${esc(r.b.name)}<small>${Math.round(r.v / total * 100)}%</small><span class="chev" aria-hidden="true">▶</span></span><b class="num">${zl(r.v)}</b></div>
-        <div class="bar"><span style="background:${colorOf(r.b.id)}" data-w="${r.v / max * 100}"></span></div></summary>
+        <div class="bar"><span style="background:${colorOf(r.b.id)};color:${colorOf(r.b.id)}" data-w="${r.v / max * 100}"></span></div></summary>
         <div class="subs">${subs.map(x => subRow(r.b, x)).join('')}</div></details>`;
     }).join('') + `<p class="total">Razem <b class="num" style="color:var(--text)">${zl(total)}</b>${sel === 'year' ? ' od początku roku' : sel > lastIdx ? ' zapłacone z góry' : ' w tym miesiącu'}.</p>`;
     requestAnimationFrame(() => listEl.querySelectorAll('[data-w]').forEach(el => { el.style.width = el.dataset.w + '%'; }));
@@ -1143,12 +1145,14 @@ function startApp(initial) {
         <mask id="fcMask"><rect x="0" y="0" width="${f1(xSplit)}" height="${H}" fill="#fff"/><rect x="${f1(xSplit)}" y="0" width="${W}" height="${H}" fill="#5a5a5a"/></mask>
         <linearGradient id="gLeft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--left-area)" stop-opacity=".55"/><stop offset="1" stop-color="var(--left-area)" stop-opacity=".18"/></linearGradient>
         <linearGradient id="gDef" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--deficit)" stop-opacity=".65"/><stop offset="1" stop-color="var(--deficit)" stop-opacity=".3"/></linearGradient>
+        ${window.SKIN === 'neon' ? '<pattern id="neonScanY" width="6" height="4" patternUnits="userSpaceOnUse"><rect width="6" height="1.2" fill="#fff" fill-opacity=".14"/></pattern>' : ''}
       </defs>
       ${grid}${fcShade}
       <g clip-path="url(#reveal)">
         <g mask="url(#fcMask)">
           <path d="${band}" fill="url(#gLeft)" clip-path="url(#cBelow)"/>
           <path d="${band}" fill="url(#gDef)" clip-path="url(#cAbove)"/>
+          ${window.SKIN === 'neon' ? `<path class="tex" d="${band}" fill="url(#neonScanY)"/>` : ''}
         </g>
         ${incBand}${lines(exp, sE, 'var(--expense)')}${lines(inc, sI, 'var(--income)')}
         ${dots(exp, 'var(--expense)')}${dots(inc, 'var(--income)')}
@@ -1250,21 +1254,29 @@ function startApp(initial) {
     const labels = ym.map((x, i) => `<text x="${f1(X(i))}" y="${H - 6}" text-anchor="middle" fill="${i === D.currentMonth ? 'var(--text)' : 'var(--muted)'}" font-size="12" font-weight="${i === D.currentMonth ? 700 : 500}">${x.label}</text>`).join('');
     // kolumny: segmenty od dołu, lekko przezroczyste, bez przerw i obrysów; zaokrąglona tylko góra
     const showTotals = bw >= 24 || !!ISO;
+    // skórka Neon: segmenty jak świetlówki – osobne „rurki” z odstępem, świecący obrys, prześwit z liniami skanowania
+    const NEON = window.SKIN === 'neon';
     const cols = stacks.map((st, i) => {
       const op = 1;
       let yCur = Y(0), out = '';
       const vis = st.segs.filter(g => g.v / top * ih >= 0.8);
       vis.forEach((g, j) => {
         const hgt = g.v / top * ih;
-        const y = yCur - hgt;
-        out += j === vis.length - 1
-          ? `<path d="${roundTop(X(i) - bw / 2, y, bw, hgt, 5)}" fill="${colorOf(g.id)}" fill-opacity=".8"/>`
-          : `<rect x="${f1(X(i) - bw / 2)}" y="${f1(y)}" width="${f1(bw)}" height="${f1(hgt + 0.5)}" fill="${colorOf(g.id)}" fill-opacity=".8"/>`;
+        const y = yCur - hgt, c = colorOf(g.id);
+        if (NEON) {
+          const gap = hgt > 5 ? 1.5 : 0.5;   // przerwa między rurkami (z każdej strony połowa)
+          out += `<rect class="seg" x="${f1(X(i) - bw / 2 + 1)}" y="${f1(y + gap)}" width="${f1(bw - 2)}" height="${f1(Math.max(0.6, hgt - 2 * gap))}" rx="2" fill="${c}" stroke="${c}" style="color:${c}"/>`;
+        } else {
+          out += j === vis.length - 1
+            ? `<path d="${roundTop(X(i) - bw / 2, y, bw, hgt, 5)}" fill="${c}" fill-opacity=".8"/>`
+            : `<rect x="${f1(X(i) - bw / 2)}" y="${f1(y)}" width="${f1(bw)}" height="${f1(hgt + 0.5)}" fill="${c}" fill-opacity=".8"/>`;
+        }
         yCur = y;
       });
+      if (NEON && vis.length) out += `<rect class="tex" x="${f1(X(i) - bw / 2 + 1)}" y="${f1(yCur)}" width="${f1(bw - 2)}" height="${f1(Y(0) - yCur)}" fill="url(#neonScan)" pointer-events="none"/>`;
       const lbl = showTotals && st.total > 0
         ? `<text x="${f1(X(i))}" y="${f1(Y(st.total) - 6)}" text-anchor="middle" fill="var(--text-2)" font-size="${W < 600 ? 9.5 : 11}" font-weight="600">${ISO ? fmtN(st.total) : (st.total / 1000).toLocaleString('pl-PL', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</text>` : '';
-      return `<g class="scol" data-op="${op}" opacity="${op}">${out}${lbl}</g>`;
+      return `<g class="scol${NEON && !animated && !reduceMotion ? ' boot' : ''}" style="--i:${i}" data-op="${op}" opacity="${op}">${out}${lbl}</g>`;
     }).join('');
     // dochód: wariant ostrożny (linia ciągła w danych, przerywana w prognozie) i średni (kropkowany)
     const inc = ym.map((x, i) => ({ x: X(i), y: Y(x.incomeA) }));
@@ -1282,7 +1294,7 @@ function startApp(initial) {
 
     box.querySelector('svg') && box.querySelector('svg').remove();
     box.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Struktura wydatków i dochód w poszczególnych miesiącach ${D.year}">
-      <defs><clipPath id="reveal"><rect id="revealRect" x="0" y="0" width="${animated || reduceMotion ? W : 0}" height="${H}"/></clipPath></defs>
+      <defs><clipPath id="reveal"><rect id="revealRect" x="0" y="0" width="${animated || reduceMotion ? W : 0}" height="${H}"/></clipPath>${NEON ? '<pattern id="neonScan" width="6" height="4" patternUnits="userSpaceOnUse"><rect width="6" height="1.2" fill="#fff" fill-opacity=".16"/></pattern>' : ''}</defs>
       ${grid}
       <g clip-path="url(#reveal)">${cols}${ISO ? '' : incLine}</g>
       ${labels}${taxMarks}
@@ -1690,7 +1702,7 @@ function startApp(initial) {
     const segs = st.segs.filter(g => g.v > 0);
     const scale = Math.max(st.total, ym.incomeA, ym.incomeB) * 1.02 || 1;
     if (segs.length) {
-      h += `<div class="sbar" role="img" aria-label="Struktura wydatków na tle dochodu">${segs.map(g => `<span style="width:${g.v / scale * 100}%;background:${colorOf(g.id)}" title="${esc(g.name)}: ${zl(g.v)}"></span>`).join('')}<i style="left:${Math.min(99.5, ym.incomeA / scale * 100)}%" title="Dochód"></i></div>
+      h += `<div class="sbar" role="img" aria-label="Struktura wydatków na tle dochodu">${segs.map(g => `<span style="width:${g.v / scale * 100}%;background:${colorOf(g.id)};color:${colorOf(g.id)}" title="${esc(g.name)}: ${zl(g.v)}"></span>`).join('')}<i style="left:${Math.min(99.5, ym.incomeA / scale * 100)}%" title="Dochód"></i></div>
         <div class="sbar-cap"><span>${ym.status === 'current' ? 'wydane do dziś' : 'wydatki'} <b class="num">${zl(st.total)}</b></span><span>pionowa kreska = dochód <b class="num">${zl(ym.incomeA)}</b></span></div>`;
     }
     h += rows.map(r => {
@@ -1701,7 +1713,7 @@ function startApp(initial) {
         else cmp = `<div class="cmp">typowo ${zl(r.typical)}</div>`;
       }
       return `<div class="dblock"><div class="row"><span><i class="dotc" style="background:${colorOf(r.b.id)}"></i>${esc(r.b.name)}</span><b>${zl(r.v)}</b></div>${cmp}
-        <div class="bar"><span style="width:${Math.max(2, r.v / max * 100)}%;background:${colorOf(r.b.id)}"></span></div>
+        <div class="bar"><span style="width:${Math.max(2, r.v / max * 100)}%;background:${colorOf(r.b.id)};color:${colorOf(r.b.id)}"></span></div>
         ${r.subs.length ? `<div class="subs">${r.subs.map(x => `<div><span>${esc(pretty(x.n))}</span><span class="num">${zl(x.v)}</span></div>`).join('')}</div>` : ''}</div>`;
     }).join('') || '<p class="dnote">Brak wydatków w tym miesiącu.</p>';
     if (ym.status !== 'future' && D.limits.length) {
@@ -1885,8 +1897,13 @@ function startApp(initial) {
       const lo = lower.slice(), hi = pts.map((p, i) => lo[i] + p.vals[k]);
       hi.forEach((v, i) => { lower[i] = v; });
       const d = 'M' + hi.map((v, i) => f1(X(i)) + ',' + f1(Y(v))).join('L') + 'L' + lo.map((v, i) => [i, v]).reverse().map(([i, v]) => f1(X(i)) + ',' + f1(Y(v))).join('L') + 'Z';
-      bands += `<path d="${d}" fill="${accColor(a.name)}" opacity=".88" data-band="${esc(a.name)}"><title>${esc(a.name)}</title></path>`;
+      const c = accColor(a.name);
+      bands += window.SKIN === 'neon'
+        ? `<path d="${d}" fill="${c}" stroke="${c}" style="color:${c}" class="nb" data-band="${esc(a.name)}"><title>${esc(a.name)}</title></path>`
+        : `<path d="${d}" fill="${c}" opacity=".88" data-band="${esc(a.name)}"><title>${esc(a.name)}</title></path>`;
     });
+    const bandTex = window.SKIN === 'neon' && accs.length
+      ? `<defs><pattern id="neonScanS" width="6" height="4" patternUnits="userSpaceOnUse"><rect width="6" height="1.2" fill="#fff" fill-opacity=".14"/></pattern></defs><path class="tex" d="M${lower.map((v, i) => f1(X(i)) + ',' + f1(Y(v))).join('L')}L${f1(X(n))},${f1(Y(0))}L${f1(X(0))},${f1(Y(0))}Z" fill="url(#neonScanS)" pointer-events="none"/>` : '';
     // przyrost z budżetu (prognoza, wybrany wariant) ponad dzisiejszymi saldami
     const key = VARIANT === 'B' ? 'tB' : 'tA';
     const fcIdx = pts.map((p, i) => i).filter(i => i >= now);
@@ -1902,7 +1919,7 @@ function startApp(initial) {
     const xl = pts.map((p, i) => keep.has(i) ? `<text x="${f1(LX(i))}" y="${H - 6}" text-anchor="middle" fill="${i === now ? 'var(--text)' : 'var(--muted)'}" font-size="12"${i === now ? ' font-weight="700"' : ''}>${p.label}</text>` : '').join('');
     const ev = pts.map((p, i) => p.items.filter(t => /OC\/AC|próg|Przegląd/.test(t)).length ? `<circle cx="${f1(X(i))}" cy="${pad.t - 8}" r="3.5" fill="var(--warning)"><title>${esc(p.label + ': ' + p.items.join(', '))}</title></circle>` : '').join('');
     box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Salda kont i prognoza do końca ${D.year + 1}">
-      ${grid}${bands}${grow}
+      ${grid}${bands}${bandTex}${grow}
       ${now > 0 ? `<line x1="${f1(X(now))}" x2="${f1(X(now))}" y1="${pad.t}" y2="${pad.t + ih}" stroke="var(--text-2)" stroke-dasharray="2 4" opacity=".6"/>` : ''}
       ${lineB ? `<path d="${lineB}" fill="none" stroke="var(--left)" stroke-width="1.6" stroke-dasharray="3 5"/>` : ''}
       <path d="${lineA}" fill="none" stroke="var(--left)" stroke-width="2.4"/>
@@ -2139,7 +2156,7 @@ function startApp(initial) {
     document.querySelectorAll('[data-acc-color]').forEach(inp => { if (inp.dataset.accColor === name) inp.value = hex6(accColorRaw(name)); });
     document.querySelectorAll('[data-acc-swatch]').forEach(el => { if (el.dataset.accSwatch === name) el.style.background = c; });
     document.querySelectorAll('[data-acc-bar]').forEach(el => { if (el.dataset.accBar === name) el.style.background = c; });
-    document.querySelectorAll('#savChart [data-band]').forEach(el => { if (el.dataset.band === name) el.setAttribute('fill', c); });
+    document.querySelectorAll('#savChart [data-band]').forEach(el => { if (el.dataset.band === name) { el.setAttribute('fill', c); if (el.classList.contains('nb')) { el.setAttribute('stroke', c); el.style.color = c; } } });
   }
   const accValFrom = (el, n) => {   // kolor z pola koloru albo suwaka przezroczystości, drugi składnik bez zmian
     const ds = el.dataset, cur = accColorRaw(n);

@@ -214,3 +214,49 @@ html[data-skin="neon"] .skin[aria-pressed="true"]::after { background: var(--y);
 html[data-skin="neon"] .tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 400px) { html[data-skin="neon"] .tabbar button { font-size: 11px; } html[data-skin="neon"] .tabbar .tb-add svg { width: 50px; padding: 12px 13px; } }
 html[data-skin="neon"] .tax .row, html[data-skin="neon"] .goal-row, html[data-skin="neon"] .loan-row { flex-wrap: wrap; column-gap: 10px; }
+
+/* wykres Struktura jak świetlówki: przygaszone wnętrze, jasny obrys, poświata, linie skanowania, włączanie z migotaniem */
+html[data-skin="neon"] .chart .seg { fill-opacity: .2; stroke-width: 1.4; filter: drop-shadow(0 0 2.5px currentColor) drop-shadow(0 0 7px currentColor); transition: fill-opacity .2s; }
+html[data-skin="neon"] .chart .scol:hover .seg { fill-opacity: .34; }
+html[data-skin="neon"] .chart .tex { mix-blend-mode: screen; }
+html[data-skin="neon"] .chart .scol text { font-family: var(--mono); fill: #ecfbff; filter: drop-shadow(0 0 4px rgba(0,229,255,.7)); }
+html[data-skin="neon"] .chart path[stroke="var(--text)"] { stroke: #ecfbff; filter: drop-shadow(0 0 3px rgba(0,229,255,.9)) drop-shadow(0 0 8px rgba(0,229,255,.5)); }
+html[data-skin="neon"] .chart circle[fill="var(--text)"] { fill: #ecfbff; filter: drop-shadow(0 0 4px #00e5ff); }
+html[data-skin="neon"] .legend .sw { box-shadow: 0 0 6px currentColor; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-skin="neon"] .chart .scol.boot { animation: neonTubeOn 1.1s linear backwards; animation-delay: calc(.35s + var(--i) * 70ms); }
+}
+@keyframes neonTubeOn { 0% { opacity: .08; } 8% { opacity: .9; } 12% { opacity: .15; } 22% { opacity: 1; } 27% { opacity: .35; } 34% { opacity: 1; } 100% { opacity: 1; } }
+
+/* Bilans: linie jak świetlówki, pole z liniami skanowania */
+html[data-skin="neon"] .chart path[stroke="var(--income)"] { filter: drop-shadow(0 0 2.5px var(--income)) drop-shadow(0 0 8px var(--income)); }
+html[data-skin="neon"] .chart path[stroke="var(--expense)"] { filter: drop-shadow(0 0 2.5px var(--expense)) drop-shadow(0 0 8px var(--expense)); }
+html[data-skin="neon"] .chart circle[fill="var(--income)"] { filter: drop-shadow(0 0 4px var(--income)); }
+html[data-skin="neon"] .chart circle[fill="var(--expense)"] { filter: drop-shadow(0 0 4px var(--expense)); }
+html[data-skin="neon"] .chart .tex, html[data-skin="neon"] .sav-chart .tex { mix-blend-mode: screen; pointer-events: none; }
+
+/* Oszczędności: pola kont jako świecące tafle, linie prognozy, celu i długu z poświatą */
+html[data-skin="neon"] .sav-chart .nb { fill-opacity: .2; stroke-width: 1.3; stroke-linejoin: round; filter: drop-shadow(0 0 2.5px currentColor) drop-shadow(0 0 6px currentColor); }
+html[data-skin="neon"] .sav-chart path[stroke="var(--left)"] { filter: drop-shadow(0 0 3px var(--left)) drop-shadow(0 0 8px var(--left)); }
+html[data-skin="neon"] .sav-chart circle[fill="var(--left)"] { filter: drop-shadow(0 0 4px var(--left)); }
+html[data-skin="neon"] .sav-chart line[stroke="var(--warning)"] { filter: drop-shadow(0 0 4px var(--warning)); }
+html[data-skin="neon"] .sav-chart line[stroke="#7fb4f5"] { stroke: var(--c); filter: drop-shadow(0 0 4px var(--c)); }
+html[data-skin="neon"] .sav-chart text[fill="#7fb4f5"] { fill: var(--c); }
+html[data-skin="neon"] .sav-chart path[fill="var(--left-area)"] { opacity: .22; }
+
+/* paski (limity, kategorie, struktura miesiąca, raty, cel): rurki – przygaszone wnętrze, jasny obrys, poświata, segmenty */
+html[data-skin="neon"] :is(.track > span, .cat .bar span, .dblock .bar span, .sbar span, .osz-bar span, .meter .sp, .meter .lf) {
+  background-image: repeating-linear-gradient(90deg, rgba(7,7,12,.5) 0 1px, transparent 1px 4px), linear-gradient(rgba(7,7,12,.4), rgba(7,7,12,.4)) !important;
+  box-shadow: inset 0 0 0 1px currentColor, 0 0 5px currentColor, 0 0 14px -3px currentColor !important;
+}
+html[data-skin="neon"] .meter .sp { color: var(--m); }
+html[data-skin="neon"] .meter .lf { color: var(--y); }
+html[data-skin="neon"] :is(.track, .cat .bar, .dblock .bar, .sbar, .osz-bar, .meter) { overflow: visible; }
+html[data-skin="neon"] .cat .bar, html[data-skin="neon"] .dblock .bar { height: 8px; }
+html[data-skin="neon"] .sbar { gap: 2px; }
+html[data-skin="neon"] .osz-bar { gap: 3px; }
+html[data-skin="neon"] .track > u { background: #ecfbff; box-shadow: 0 0 6px #ecfbff; }
+html[data-skin="neon"] .months span { box-shadow: inset 0 0 0 1px rgba(140,107,255,.35); }
+html[data-skin="neon"] .months span.warn { background: rgba(255,184,0,.35); box-shadow: inset 0 0 0 1px #ffb800, 0 0 6px #ffb800; }
+html[data-skin="neon"] .months span.over { background: rgba(255,42,109,.35); box-shadow: inset 0 0 0 1px #ff2a6d, 0 0 6px #ff2a6d; }
+html[data-skin="neon"] .months span.now { outline: 1px solid var(--y); outline-offset: 1px; }
