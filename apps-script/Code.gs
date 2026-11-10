@@ -18,7 +18,7 @@
  ****************************************************************/
 
 const CFG = {
-  VERSION: '18',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
+  VERSION: '19',            // ta sama liczba jest w Index.html (CLIENT_VERSION); strona ostrzega, gdy się różnią
   SETTINGS_SHEET: 'Ustawienia',
   DEADLINES_SHEET: 'Terminy',
   LOG_SHEET: 'Wpisy',
@@ -1233,7 +1233,9 @@ function saveColors(arg) {
   const ids = CFG.BLOCKS.filter(function (b) { return b.id; }).map(function (b) { return b.id; }).concat(['other']);
   const src = (arg && arg.colors) || {};
   Object.keys(src).forEach(function (k) {
-    if (ids.indexOf(k) >= 0 && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(String(src[k]))) colors[k] = String(src[k]).toLowerCase();
+    // klucz: id kategorii albo „skórka:id” (własne kolory motywu, np. neon:mieszkanie)
+    const m = /^(?:(neon|sunset|racer):)?(.+)$/.exec(k);
+    if (m && ids.indexOf(m[2]) >= 0 && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(String(src[k]))) colors[k] = String(src[k]).toLowerCase();
   });
   writePrefs_('UI_COLORS', colors);
   return JSON.stringify({ ok: true, model: JSON.parse(cachedModelJson_(true)) });

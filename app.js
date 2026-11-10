@@ -1,4 +1,4 @@
-const CLIENT_VERSION = '18.8';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
+const CLIENT_VERSION = '19.0';   // część po kropce: zmiany tylko w stronie (skrypt bez zmian)
 const major = v => String(v || '').split('.')[0];
 function startApp(initial) {
   'use strict';
@@ -67,7 +67,13 @@ function startApp(initial) {
   const skinCol = c => ((window.SKIN === 'neon' || window.SKIN === 'sunset' || window.SKIN === 'racer') && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c) ? neonize(c.toLowerCase(), window.SKIN) : c);
   // własna paleta kategorii skórki (na razie: Neon) – zamiast rozjaśniania kolorów klasycznych
   const SKIN_PAL = { neon: { mieszkanie: '#00e5ff', nieistotne: '#ff2a6d', wazne: '#39ff88', auto: '#ff8a00', tbs: '#8c6bff', kredyt: '#c6ff00', wakacje: '#e040fb' } };   // paleta A (11.11.2026)
-  const colorOf = id => { const sp = SKIN_PAL[window.SKIN]; return sp && sp[id] ? sp[id] : skinCol(colorRaw(id)); };
+  // skórka z własną paletą ma też własne, edytowalne kolory: klucz „neon:mieszkanie” w tych samych ustawieniach (od v19)
+  const palSkin = () => (SKIN_PAL[window.SKIN] ? window.SKIN : null);
+  const colorKey = id => (palSkin() ? palSkin() + ':' + id : id);
+  const colorDef = id => { const sp = SKIN_PAL[palSkin()]; return sp ? (sp[id] || skinCol(colorRaw(id))) : (BLOCK_COLOR[id] || '#5b6779'); };
+  const savedColor = id => { const c = D && D.prefs && D.prefs.colors; return c ? c[colorKey(id)] : undefined; };
+  const colorEdit = id => (palSkin() ? savedColor(id) || colorDef(id) : colorRaw(id));   // kolor do edycji w bieżącej skórce
+  const colorOf = id => (palSkin() ? colorEdit(id) : skinCol(colorRaw(id)));
   const accColor = name => skinCol(accColorRaw(name));
   let VIEW = 'balance', ISO = null, CAT_SEL = 'year', TAB = 'teraz', VARIANT = 'A', FIXED_FILTER = 'all';
   const TABS = ['teraz', 'wydatki', 'plan', 'oszczednosci', 'wpisy', 'urzadzenia'];
@@ -438,16 +444,20 @@ function startApp(initial) {
   }
   function colorsPanel() {
     const ids = BLOCK_ORDER.filter(id => D.blocks.some(b => b.id === id));
-    const col = id => (COLOR_DRAFT && COLOR_DRAFT[id]) || colorRaw(id);
+    const col = id => (COLOR_DRAFT && COLOR_DRAFT[id]) || colorEdit(id);
+    const show = c => (palSkin() ? c : skinCol(c));
     const pairs = [];
     ids.forEach((a, i) => ids.slice(i + 1).forEach(b => { if (colorDistance(col(a), col(b)) < 60) pairs.push([a, b]); }));
     const nameOf = id => D.blocks.find(b => b.id === id).name;
-    const custom = D.prefs && D.prefs.colors && Object.keys(D.prefs.colors).length;
+    const ps = palSkin(), mine = k => (ps ? k.indexOf(ps + ':') === 0 : k.indexOf(':') < 0);
+    const custom = D.prefs && D.prefs.colors && Object.keys(D.prefs.colors).some(mine);
+    const oldScript = ps && D.version && +major(D.version) < 19;
     return `<section class="panel colors" aria-labelledby="h-col"><h2 id="h-col">Kolory kategorii</h2>
-      <p class="desc">Kolory na wykresach i listach, takie same na wszystkich urządzeniach. Dotknij koloru, żeby go zmienić, a suwakiem ustaw przezroczystość.</p>
-      <div class="col-prev" aria-hidden="true">${ids.map(id => `<span style="background:${skinCol(col(id))}"></span>`).join('')}</div>
+      <p class="desc">${ps ? `Kolory dla motywu ${esc((SKINS.find(k => k.id === ps) || {}).name || ps)} – osobne od klasycznych, takie same na każdym urządzeniu z tym motywem. Klasyczne kolory zmienisz po przełączeniu motywu.` : 'Kolory na wykresach i listach, takie same na wszystkich urządzeniach.'} Dotknij koloru, żeby go zmienić, a suwakiem ustaw przezroczystość.</p>
+      ${oldScript ? '<p class="rem-err">Żeby zapisać kolory motywu, wklej nowy Code.gs (v19) i wdróż nową wersję.</p>' : ''}
+      <div class="col-prev" aria-hidden="true">${ids.map(id => `<span style="background:${show(col(id))}"></span>`).join('')}</div>
       <ul class="col-list">${ids.map(id => `<li><div class="col-top"><label><input type="color" value="${hex6(col(id))}" data-color="${id}" aria-label="Kolor: ${esc(nameOf(id))}"><span>${esc(nameOf(id))}</span></label>
-        ${col(id) !== BLOCK_COLOR[id] ? `<button type="button" class="edit" data-color-reset="${id}">domyślny</button>` : ''}</div>${transpCtl(col(id), `data-color-alpha="${id}"`, esc(nameOf(id)))}</li>`).join('')}</ul>
+        ${col(id) !== colorDef(id) ? `<button type="button" class="edit" data-color-reset="${id}">domyślny</button>` : ''}</div>${transpCtl(col(id), `data-color-alpha="${id}"`, esc(nameOf(id)))}</li>`).join('')}</ul>
       ${pairs.length ? `<p class="rem-err">Podobne kolory: ${pairs.map(p => esc(nameOf(p[0])) + ' i ' + esc(nameOf(p[1]))).join('; ')}. Na wykresie trudno będzie je odróżnić.</p>` : ''}
       <div class="dev-acts">${COLOR_DRAFT ? '<button type="button" class="btn-sm primary-sm" data-color-save>Zapisz kolory</button><button type="button" class="btn-sm" data-color-cancel>Anuluj</button>' : ''}
         ${custom && !COLOR_DRAFT ? '<button type="button" class="btn-sm" data-color-default>Przywróć domyślne</button>' : ''}</div>
@@ -460,12 +470,12 @@ function startApp(initial) {
   document.addEventListener('input', e => {
     const ds = e.target.dataset || {}, id = ds.color || ds.colorAlpha;
     if (!id) return;
-    const cur = (COLOR_DRAFT && COLOR_DRAFT[id]) || colorRaw(id);
+    const cur = (COLOR_DRAFT && COLOR_DRAFT[id]) || colorEdit(id);
     const v = ds.color ? withTransp(e.target.value, transpOf(cur)) : withTransp(cur, e.target.value);
     if (ds.colorAlpha) { const o = e.target.nextElementSibling; if (o) o.textContent = e.target.value + '%'; }
     COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [id]: v });
     const spans = document.querySelectorAll('.col-prev span'), ids = colorIds();
-    spans.forEach((sp, i) => { sp.style.background = skinCol((COLOR_DRAFT[ids[i]]) || colorRaw(ids[i])); });
+    spans.forEach((sp, i) => { const c = COLOR_DRAFT[ids[i]] || colorEdit(ids[i]); sp.style.background = palSkin() ? c : skinCol(c); });
   });
   document.addEventListener('change', e => {
     if (!(e.target.dataset && (e.target.dataset.color || e.target.dataset.colorAlpha))) return;
@@ -474,12 +484,15 @@ function startApp(initial) {
   });
   document.addEventListener('click', async e => {
     const rs = e.target.closest('[data-color-reset]');
-    if (rs) { COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [rs.dataset.colorReset]: BLOCK_COLOR[rs.dataset.colorReset] }); rerender(); return; }
+    if (rs) { COLOR_DRAFT = Object.assign({}, COLOR_DRAFT || {}, { [rs.dataset.colorReset]: colorDef(rs.dataset.colorReset) }); rerender(); return; }
     if (e.target.closest('[data-color-cancel]')) { COLOR_DRAFT = null; rerender(); return; }
     const sv = e.target.closest('[data-color-save]'), df = e.target.closest('[data-color-default]');
     if (!sv && !df) return;
-    const colors = df ? {} : Object.assign({}, (D.prefs && D.prefs.colors) || {}, COLOR_DRAFT);
-    Object.keys(colors).forEach(k => { if (colors[k] === BLOCK_COLOR[k]) delete colors[k]; });
+    // zapisujemy całą mapę: kolory innych skórek zostają, „Przywróć domyślne” czyści tylko bieżącą
+    const ps = palSkin(), mine = k => (ps ? k.indexOf(ps + ':') === 0 : k.indexOf(':') < 0);
+    const colors = Object.assign({}, (D.prefs && D.prefs.colors) || {});
+    if (df) Object.keys(colors).forEach(k => { if (mine(k)) delete colors[k]; });
+    else Object.keys(COLOR_DRAFT || {}).forEach(id => { if (COLOR_DRAFT[id] === colorDef(id)) delete colors[colorKey(id)]; else colors[colorKey(id)] = COLOR_DRAFT[id]; });
     try {
       const r = await call('saveColors', { colors });
       if (!r.ok) throw new Error(r.error);
